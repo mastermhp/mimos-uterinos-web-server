@@ -1,8 +1,9 @@
 // Test what password works with your current hash
 const bcrypt = require("bcryptjs")
+require("dotenv").config()
 
 async function testPasswords() {
-  const currentHash = "$2b$10$SfAdh/EpOe0nk9zt7AEu1OeHm6mZ3uAsUXzElsi2d5o6cZCzLRD22"
+  const currentHash = process.env.ADMIN_PASSWORD_HASH // This is your hash from .env.local
 
   const passwordsToTest = [
     "admin123",
