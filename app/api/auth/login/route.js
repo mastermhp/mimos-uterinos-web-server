@@ -1,64 +1,49 @@
 import { NextResponse } from "next/server"
+import { connectToDatabase } from "@/lib/mongodb"
+import bcrypt from "bcryptjs"
 import jwt from "jsonwebtoken"
-// import bcrypt from "bcryptjs" // No longer needed for hardcoded password
-
-// Get environment variables with fallbacks
-const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "admin@mimosuterinos.com"
-const JWT_SECRET = process.env.JWT_SECRET || "fallback-secret-key"
-
-// Define a hardcoded password for development purposes
-const HARDCODED_ADMIN_PASSWORD = "admin123" // <<< TEMPORARY HARDCODED PASSWORD
 
 export async function POST(request) {
   try {
     const { email, password } = await request.json()
 
-    console.log("Login attempt:", { email, hasPassword: !!password })
-    console.log("Expected email:", ADMIN_EMAIL)
+    // For now, we'll use hardcoded admin credentials
+    // In production, this should validate against a database
+    if (email === "admin@mimos.com" && password === "admin123") {
+      const token = jwt.sign(
+        {
+          id: 1,
+          email: "admin@mimos.com",
+          role: "admin",
+        },
+        process.env.JWT_SECRET || "your-secret-key",
+        { expiresIn: "24h" },
+      )
 
-    // Validate email
-    if (email !== ADMIN_EMAIL) {
-      console.log("Email mismatch")
-      return NextResponse.json({ message: "Invalid credentials" }, { status: 401 })
+      return NextResponse.json({
+        success: true,
+        token,
+        user: {
+          id: 1,
+          email: "admin@mimos.com",
+          role: "admin",
+        },
+      })
     }
 
-    // Validate password using hardcoded value (TEMPORARY)
-    if (password !== HARDCODED_ADMIN_PASSWORD) {
-      console.log("Password validation failed (hardcoded check)")
-      return NextResponse.json({ message: "Invalid credentials" }, { status: 401 })
+    // TODO: Add database validation for other admin users
+    const { db } = await connectToDatabase()
+    const admin = await db.collection("admins").findOne({ email })
+    if (admin && (await bcrypt.compare(password, admin.password))) {
+      const token = jwt.sign({ id: admin._id, email: admin.email, role: "admin" }, process.env.JWT_SECRET, {
+        expiresIn: "24h",
+      })
+      return NextResponse.json({ success: true, token, user: { id: admin._id, email: admin.email, role: "admin" } })
     }
 
-    console.log("Password validation result: true (hardcoded check)")
-
-    // Generate JWT token
-    const token = jwt.sign(
-      {
-        email,
-        role: "admin",
-        timestamp: Date.now(),
-      },
-      JWT_SECRET,
-      { expiresIn: "24h" },
-    )
-
-    console.log("Login successful for:", email)
-
-    return NextResponse.json({
-      message: "Login successful",
-      token,
-      user: {
-        email,
-        role: "admin",
-      },
-    })
+    return NextResponse.json({ success: false, message: "Invalid credentials" }, { status: 401 })
   } catch (error) {
     console.error("Login error:", error)
-    return NextResponse.json(
-      {
-        message: "Internal server error",
-        error: process.env.NODE_ENV === "development" ? error.message : undefined,
-      },
-      { status: 500 },
-    )
+    return NextResponse.json({ success: false, message: "Server error" }, { status: 500 })
   }
 }
