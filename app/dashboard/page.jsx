@@ -43,59 +43,66 @@ export default function Dashboard() {
 
   const fetchDashboardData = async () => {
     try {
-      // Fetch all data in parallel
-      const [usersResponse, cyclesResponse, symptomsResponse, chatsResponse, reportsResponse, consultationsResponse] =
-        await Promise.all([
-          fetch("/api/users?limit=100"),
-          fetch("/api/cycles?limit=100"),
-          fetch("/api/symptoms?limit=100"),
-          fetch("/api/ai/chat?limit=100"),
-          fetch("/api/reports?limit=100"),
-          fetch("/api/doctor/consultations?limit=100"),
-        ])
+      // Fetch all data in parallel with error handling
+      const fetchWithFallback = async (url) => {
+        try {
+          const response = await fetch(url)
+          if (!response.ok) throw new Error(`HTTP ${response.status}`)
+          return await response.json()
+        } catch (error) {
+          console.error(`Error fetching ${url}:`, error)
+          return { success: false, data: [] }
+        }
+      }
 
       const [usersData, cyclesData, symptomsData, chatsData, reportsData, consultationsData] = await Promise.all([
-        usersResponse.json(),
-        cyclesResponse.json(),
-        symptomsResponse.json(),
-        chatsResponse.json(),
-        reportsResponse.json(),
-        consultationsResponse.json(),
+        fetchWithFallback("/api/users?limit=100"),
+        fetchWithFallback("/api/cycles?limit=100"),
+        fetchWithFallback("/api/symptoms?limit=100"),
+        fetchWithFallback("/api/ai/chat?limit=100"),
+        fetchWithFallback("/api/reports?limit=100"),
+        fetchWithFallback("/api/doctor/consultations?limit=100"),
       ])
 
-      // Update stats
-      if (usersData.success) {
+      // Update stats with safe data access
+      if (usersData.success && Array.isArray(usersData.data)) {
         const users = usersData.data
         setStats((prev) => ({
           ...prev,
           totalUsers: users.length,
-          activeUsers: users.filter((u) => u.status === "active").length,
-          premiumUsers: users.filter((u) => u.premium).length,
+          activeUsers: users.filter((u) => u?.status === "active").length,
+          premiumUsers: users.filter((u) => u?.premium).length,
         }))
       }
 
-      if (cyclesData.success) {
+      if (cyclesData.success && Array.isArray(cyclesData.data)) {
         setStats((prev) => ({ ...prev, totalCycles: cyclesData.data.length }))
       }
 
-      if (symptomsData.success) {
+      if (symptomsData.success && Array.isArray(symptomsData.data)) {
         setStats((prev) => ({ ...prev, totalSymptoms: symptomsData.data.length }))
       }
 
-      if (chatsData.success) {
+      if (chatsData.success && Array.isArray(chatsData.data)) {
         setStats((prev) => ({ ...prev, totalChats: chatsData.data.length }))
       }
 
-      if (reportsData.success) {
+      if (reportsData.success && Array.isArray(reportsData.data)) {
         setStats((prev) => ({ ...prev, totalReports: reportsData.data.length }))
       }
 
-      if (consultationsData.success) {
+      if (consultationsData.success && Array.isArray(consultationsData.data)) {
         setStats((prev) => ({ ...prev, totalConsultations: consultationsData.data.length }))
       }
 
-      // Generate real-time activity feed
-      generateRecentActivity(usersData.data, cyclesData.data, symptomsData.data, chatsData.data, consultationsData.data)
+      // Generate real-time activity feed with safe data
+      generateRecentActivity(
+        usersData.data || [],
+        cyclesData.data || [],
+        symptomsData.data || [],
+        chatsData.data || [],
+        consultationsData.data || [],
+      )
     } catch (error) {
       console.error("Error fetching dashboard data:", error)
     } finally {
@@ -106,93 +113,147 @@ export default function Dashboard() {
   const generateRecentActivity = (users, cycles, symptoms, chats, consultations) => {
     const activities = []
 
+    // Helper function to generate unique ID
+    const generateUniqueId = (type, item, index) => {
+      const id = item?.id || item?._id || `temp-${Date.now()}-${index}`
+      return `${type}-${id}`
+    }
+
+    // Helper function to safely get user name
+    const getUserName = (userId) => {
+      if (!userId) return "Unknown User"
+      const user = users?.find((u) => u?.id === userId || u?._id === userId)
+      return user?.name || user?.email?.split("@")[0] || "Unknown User"
+    }
+
+    // Helper function to safely format time
+    const safeGetRelativeTime = (dateString) => {
+      if (!dateString) return "Unknown time"
+      try {
+        return getRelativeTime(dateString)
+      } catch (error) {
+        return "Unknown time"
+      }
+    }
+
     // Recent user registrations
-    users.slice(0, 3).forEach((user) => {
-      activities.push({
-        id: `user-${user.id}`,
-        type: "user_joined",
-        message: `New user ${user.name} joined`,
-        time: getRelativeTime(user.joinDate),
-        icon: UserPlus,
-        color: "text-green-500",
-        userId: user.id,
+    if (users && Array.isArray(users)) {
+      users.slice(0, 3).forEach((user, index) => {
+        if (user) {
+          activities.push({
+            id: generateUniqueId("user", user, index),
+            type: "user_joined",
+            message: `New user ${user.name || user.email || "Unknown"} joined`,
+            time: safeGetRelativeTime(user.joinDate || user.createdAt),
+            icon: UserPlus,
+            color: "text-green-500",
+            userId: user.id || user._id,
+          })
+        }
       })
-    })
+    }
 
     // Recent symptom logs
-    symptoms.slice(0, 2).forEach((symptom) => {
-      const user = users.find((u) => u.id === symptom.userId)
-      activities.push({
-        id: `symptom-${symptom.id}`,
-        type: "symptom_logged",
-        message: `${user?.name || "User"} logged new symptoms`,
-        time: getRelativeTime(symptom.createdAt),
-        icon: Activity,
-        color: "text-blue-500",
-        userId: symptom.userId,
+    if (symptoms && Array.isArray(symptoms)) {
+      symptoms.slice(0, 2).forEach((symptom, index) => {
+        if (symptom) {
+          activities.push({
+            id: generateUniqueId("symptom", symptom, index),
+            type: "symptom_logged",
+            message: `${getUserName(symptom.userId)} logged new symptoms`,
+            time: safeGetRelativeTime(symptom.createdAt),
+            icon: Activity,
+            color: "text-blue-500",
+            userId: symptom.userId,
+          })
+        }
       })
-    })
+    }
 
     // Recent AI chats
-    chats.slice(0, 2).forEach((chat) => {
-      const user = users.find((u) => u.id === chat.userId)
-      activities.push({
-        id: `chat-${chat.id}`,
-        type: "ai_chat",
-        message: `AI chat session with ${user?.name || "User"}`,
-        time: getRelativeTime(chat.createdAt),
-        icon: MessageCircle,
-        color: "text-purple-500",
-        userId: chat.userId,
+    if (chats && Array.isArray(chats)) {
+      chats.slice(0, 2).forEach((chat, index) => {
+        if (chat) {
+          activities.push({
+            id: generateUniqueId("chat", chat, index),
+            type: "ai_chat",
+            message: `AI chat session with ${getUserName(chat.userId)}`,
+            time: safeGetRelativeTime(chat.createdAt),
+            icon: MessageCircle,
+            color: "text-purple-500",
+            userId: chat.userId,
+          })
+        }
       })
-    })
+    }
 
     // Recent cycle updates
-    cycles.slice(0, 2).forEach((cycle) => {
-      const user = users.find((u) => u.id === cycle.userId)
-      activities.push({
-        id: `cycle-${cycle.id}`,
-        type: "cycle_updated",
-        message: `${user?.name || "User"} updated cycle information`,
-        time: getRelativeTime(cycle.createdAt),
-        icon: Calendar,
-        color: "text-pink-500",
-        userId: cycle.userId,
+    if (cycles && Array.isArray(cycles)) {
+      cycles.slice(0, 2).forEach((cycle, index) => {
+        if (cycle) {
+          activities.push({
+            id: generateUniqueId("cycle", cycle, index),
+            type: "cycle_updated",
+            message: `${getUserName(cycle.userId)} updated cycle information`,
+            time: safeGetRelativeTime(cycle.createdAt),
+            icon: Calendar,
+            color: "text-pink-500",
+            userId: cycle.userId,
+          })
+        }
       })
-    })
+    }
 
     // Recent consultations
-    consultations.slice(0, 1).forEach((consultation) => {
-      const user = users.find((u) => u.id === consultation.userId)
-      activities.push({
-        id: `consultation-${consultation.id}`,
-        type: "consultation_scheduled",
-        message: `Consultation scheduled for ${user?.name || "User"}`,
-        time: getRelativeTime(consultation.createdAt),
-        icon: Stethoscope,
-        color: "text-red-500",
-        userId: consultation.userId,
+    if (consultations && Array.isArray(consultations)) {
+      consultations.slice(0, 1).forEach((consultation, index) => {
+        if (consultation) {
+          activities.push({
+            id: generateUniqueId("consultation", consultation, index),
+            type: "consultation_scheduled",
+            message: `Consultation scheduled for ${getUserName(consultation.userId)}`,
+            time: safeGetRelativeTime(consultation.createdAt),
+            icon: Stethoscope,
+            color: "text-red-500",
+            userId: consultation.userId,
+          })
+        }
       })
-    })
+    }
 
     // Sort by most recent and take top 8
-    activities.sort((a, b) => new Date(b.time) - new Date(a.time))
-    setRecentActivity(activities.slice(0, 8))
+    // Filter out any activities with invalid data
+    const validActivities = activities.filter(
+      (activity) => activity && activity.id && activity.message && activity.time,
+    )
+
+    setRecentActivity(validActivities.slice(0, 8))
   }
 
   const getRelativeTime = (dateString) => {
-    const now = new Date()
-    const date = new Date(dateString)
-    const diffInMinutes = Math.floor((now - date) / (1000 * 60))
+    if (!dateString) return "Unknown time"
 
-    if (diffInMinutes < 1) return "Just now"
-    if (diffInMinutes < 60) return `${diffInMinutes} minutes ago`
+    try {
+      const now = new Date()
+      const date = new Date(dateString)
 
-    const diffInHours = Math.floor(diffInMinutes / 60)
-    if (diffInHours < 24) return `${diffInHours} hours ago`
+      // Check if date is valid
+      if (isNaN(date.getTime())) return "Unknown time"
 
-    const diffInDays = Math.floor(diffInHours / 24)
-    return `${diffInDays} days ago`
+      const diffInMinutes = Math.floor((now - date) / (1000 * 60))
+
+      if (diffInMinutes < 1) return "Just now"
+      if (diffInMinutes < 60) return `${diffInMinutes} minutes ago`
+
+      const diffInHours = Math.floor(diffInMinutes / 60)
+      if (diffInHours < 24) return `${diffInHours} hours ago`
+
+      const diffInDays = Math.floor(diffInHours / 24)
+      return `${diffInDays} days ago`
+    } catch (error) {
+      console.error("Error parsing date:", error)
+      return "Unknown time"
+    }
   }
 
   const StatCard = ({ title, value, description, icon: Icon, color, trend, href }) => (

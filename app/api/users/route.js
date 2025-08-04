@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import bcrypt from "bcryptjs"
 import { connectToDatabase } from "@/lib/mongodb"
 
 // Mock user data with more comprehensive profiles
@@ -147,77 +148,133 @@ const mockUsers = [
 
 export async function GET(request) {
   try {
+    const { db } = await connectToDatabase()
     const { searchParams } = new URL(request.url)
+
     const page = Number.parseInt(searchParams.get("page")) || 1
     const limit = Number.parseInt(searchParams.get("limit")) || 10
     const search = searchParams.get("search") || ""
+    const accountType = searchParams.get("accountType") || ""
+    const isActive = searchParams.get("isActive")
 
-    // Replace with actual database query
-    const { db } = await connectToDatabase()
-    const query = search
-      ? {
-          $or: [{ name: { $regex: search, $options: "i" } }, { email: { $regex: search, $options: "i" } }],
-        }
-      : {}
-    const users = await db.collection("users").find(query).toArray()
+    const skip = (page - 1) * limit
 
-    let filteredUsers = users
+    // Build filter
+    const filter = {}
+
     if (search) {
-      filteredUsers = users.filter(
-        (user) =>
-          user.name.toLowerCase().includes(search.toLowerCase()) ||
-          user.email.toLowerCase().includes(search.toLowerCase()),
-      )
+      filter.$or = [{ name: { $regex: search, $options: "i" } }, { email: { $regex: search, $options: "i" } }]
     }
 
-    const startIndex = (page - 1) * limit
-    const endIndex = startIndex + limit
-    const paginatedUsers = filteredUsers.slice(startIndex, endIndex)
+    if (accountType) {
+      filter.accountType = accountType
+    }
+
+    if (isActive !== null && isActive !== "") {
+      filter.isActive = isActive === "true"
+    }
+
+    // Get users with pagination
+    const users = await db.collection("users").find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).toArray()
+
+    // Get total count
+    const total = await db.collection("users").countDocuments(filter)
+
+    // Remove sensitive data
+    const sanitizedUsers = users.map((user) => {
+      const { password, ...userWithoutPassword } = user
+      return {
+        ...userWithoutPassword,
+        id: user._id.toString(),
+        _id: user._id.toString(),
+      }
+    })
 
     return NextResponse.json({
       success: true,
-      data: paginatedUsers,
+      data: sanitizedUsers,
       pagination: {
         page,
         limit,
-        total: filteredUsers.length,
-        totalPages: Math.ceil(filteredUsers.length / limit),
+        total,
+        pages: Math.ceil(total / limit),
       },
     })
   } catch (error) {
     console.error("Error fetching users:", error)
-    return NextResponse.json({ success: false, message: "Server error" }, { status: 500 })
+    return NextResponse.json({ success: false, message: "Failed to fetch users" }, { status: 500 })
   }
 }
 
 export async function POST(request) {
   try {
+    const { db } = await connectToDatabase()
     const userData = await request.json()
 
-    // Add to database
-    const { db } = await connectToDatabase()
-    const result = await db.collection("users").insertOne({
-      ...userData,
-      createdAt: new Date(),
-      updatedAt: new Date(),
+    // Check if user already exists
+    const existingUser = await db.collection("users").findOne({
+      email: userData.email,
     })
 
-    const newUser = {
-      id: result.insertedId,
-      ...userData,
-      status: "active",
-      premium: false,
-      joinDate: new Date().toISOString(),
-      lastActive: new Date().toISOString(),
+    if (existingUser) {
+      return NextResponse.json({ success: false, message: "User with this email already exists" }, { status: 400 })
     }
+
+    // Hash password
+    const saltRounds = 12
+    const hashedPassword = await bcrypt.hash(userData.password, saltRounds)
+
+    // Prepare user document
+    const newUser = {
+      ...userData,
+      password: hashedPassword,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      lastLogin: null,
+      isVerified: true, // Admin created users are automatically verified
+      verificationToken: null,
+      resetToken: null,
+      resetTokenExpiry: null,
+    }
+
+    // Remove confirmPassword field
+    delete newUser.confirmPassword
+
+    // Insert user
+    const result = await db.collection("users").insertOne(newUser)
+
+    // Create initial user profile
+    const userProfile = {
+      userId: result.insertedId.toString(),
+      cycleLength: 28,
+      periodLength: 5,
+      lastPeriodDate: null,
+      nextPeriodDate: null,
+      symptoms: [],
+      mood: [],
+      flow: [],
+      temperature: [],
+      notes: [],
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    }
+
+    await db.collection("userProfiles").insertOne(userProfile)
+
+    // TODO: Send welcome email with temporary password
+    // You can implement email sending here
 
     return NextResponse.json({
       success: true,
-      data: newUser,
       message: "User created successfully",
+      data: {
+        id: result.insertedId.toString(),
+        email: userData.email,
+        name: userData.name,
+      },
     })
   } catch (error) {
     console.error("Error creating user:", error)
-    return NextResponse.json({ success: false, message: "Server error" }, { status: 500 })
+    return NextResponse.json({ success: false, message: "Failed to create user" }, { status: 500 })
   }
 }

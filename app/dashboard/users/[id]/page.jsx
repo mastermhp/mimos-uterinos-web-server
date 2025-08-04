@@ -54,15 +54,22 @@ export default function UserDetailPage() {
   }
 
   const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    })
+    if (!dateString) return "Not available"
+    try {
+      return new Date(dateString).toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "long",
+        day: "numeric",
+      })
+    } catch (error) {
+      return "Invalid date"
+    }
   }
 
   const getStatusColor = (status) => {
-    switch (status) {
+    if (!status) return "bg-gray-100 text-gray-800"
+
+    switch (status.toLowerCase()) {
       case "active":
         return "bg-green-100 text-green-800"
       case "inactive":
@@ -72,6 +79,20 @@ export default function UserDetailPage() {
       default:
         return "bg-gray-100 text-gray-800"
     }
+  }
+
+  const formatStatus = (status) => {
+    if (!status) return "Unknown"
+    return status.charAt(0).toUpperCase() + status.slice(1)
+  }
+
+  const getUserInitials = (name) => {
+    if (!name) return "U"
+    return name
+      .split(" ")
+      .map((n) => n[0])
+      .join("")
+      .toUpperCase()
   }
 
   if (loading) {
@@ -110,17 +131,12 @@ export default function UserDetailPage() {
                 </Button>
               </Link>
               <Avatar className="h-12 w-12">
-                <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${user.name}`} />
-                <AvatarFallback>
-                  {user.name
-                    .split(" ")
-                    .map((n) => n[0])
-                    .join("")}
-                </AvatarFallback>
+                <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${user.name || "user"}`} />
+                <AvatarFallback>{getUserInitials(user.name)}</AvatarFallback>
               </Avatar>
               <div>
                 <h1 className="text-2xl font-bold text-gray-900 flex items-center space-x-2">
-                  <span>{user.name}</span>
+                  <span>{user.name || "Unknown User"}</span>
                   {user.premium && (
                     <Badge className="bg-yellow-100 text-yellow-800">
                       <Crown className="h-3 w-3 mr-1" />
@@ -128,13 +144,11 @@ export default function UserDetailPage() {
                     </Badge>
                   )}
                 </h1>
-                <p className="text-gray-500">{user.email}</p>
+                <p className="text-gray-500">{user.email || "No email provided"}</p>
               </div>
             </div>
             <div className="flex items-center space-x-2">
-              <Badge className={getStatusColor(user.status)}>
-                {user.status.charAt(0).toUpperCase() + user.status.slice(1)}
-              </Badge>
+              <Badge className={getStatusColor(user.status)}>{formatStatus(user.status)}</Badge>
               <Button variant="outline">Edit User</Button>
             </div>
           </div>
@@ -183,16 +197,18 @@ export default function UserDetailPage() {
                 <CardContent className="space-y-4">
                   <div className="flex items-center space-x-3">
                     <Mail className="h-4 w-4 text-gray-400" />
-                    <span className="text-sm">{user.email}</span>
+                    <span className="text-sm">{user.email || "Not provided"}</span>
                   </div>
                   <div className="flex items-center space-x-3">
                     <Phone className="h-4 w-4 text-gray-400" />
                     <span className="text-sm">{user.phone || "Not provided"}</span>
                   </div>
-                  <div className="flex items-center space-x-3">
-                    <Calendar className="h-4 w-4 text-gray-400" />
-                    <span className="text-sm">Born: {formatDate(user.dateOfBirth)}</span>
-                  </div>
+                  {user.dateOfBirth && (
+                    <div className="flex items-center space-x-3">
+                      <Calendar className="h-4 w-4 text-gray-400" />
+                      <span className="text-sm">Born: {formatDate(user.dateOfBirth)}</span>
+                    </div>
+                  )}
                   {user.location && (
                     <div className="flex items-center space-x-3">
                       <MapPin className="h-4 w-4 text-gray-400" />
@@ -213,22 +229,30 @@ export default function UserDetailPage() {
                   </CardHeader>
                   <CardContent className="space-y-3">
                     <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div>
-                        <span className="text-gray-500">Cycle Length:</span>
-                        <span className="ml-2 font-medium">{user.profile.cycleLength} days</span>
-                      </div>
-                      <div>
-                        <span className="text-gray-500">Period Length:</span>
-                        <span className="ml-2 font-medium">{user.profile.periodLength} days</span>
-                      </div>
-                      <div className="col-span-2">
-                        <span className="text-gray-500">Last Period:</span>
-                        <span className="ml-2 font-medium">{formatDate(user.profile.lastPeriodDate)}</span>
-                      </div>
-                      <div className="col-span-2">
-                        <span className="text-gray-500">Current Day:</span>
-                        <span className="ml-2 font-medium">Day {user.profile.currentCycleDay}</span>
-                      </div>
+                      {user.profile.cycleLength && (
+                        <div>
+                          <span className="text-gray-500">Cycle Length:</span>
+                          <span className="ml-2 font-medium">{user.profile.cycleLength} days</span>
+                        </div>
+                      )}
+                      {user.profile.periodLength && (
+                        <div>
+                          <span className="text-gray-500">Period Length:</span>
+                          <span className="ml-2 font-medium">{user.profile.periodLength} days</span>
+                        </div>
+                      )}
+                      {user.profile.lastPeriodDate && (
+                        <div className="col-span-2">
+                          <span className="text-gray-500">Last Period:</span>
+                          <span className="ml-2 font-medium">{formatDate(user.profile.lastPeriodDate)}</span>
+                        </div>
+                      )}
+                      {user.profile.currentCycleDay && (
+                        <div className="col-span-2">
+                          <span className="text-gray-500">Current Day:</span>
+                          <span className="ml-2 font-medium">Day {user.profile.currentCycleDay}</span>
+                        </div>
+                      )}
                     </div>
 
                     {user.profile.symptoms && user.profile.symptoms.length > 0 && (
@@ -258,11 +282,11 @@ export default function UserDetailPage() {
                 <CardContent className="space-y-3">
                   <div>
                     <span className="text-gray-500 text-sm">Joined:</span>
-                    <span className="ml-2 font-medium text-sm">{formatDate(user.joinDate)}</span>
+                    <span className="ml-2 font-medium text-sm">{formatDate(user.joinDate || user.createdAt)}</span>
                   </div>
                   <div>
                     <span className="text-gray-500 text-sm">Last Active:</span>
-                    <span className="ml-2 font-medium text-sm">{formatDate(user.lastActive)}</span>
+                    <span className="ml-2 font-medium text-sm">{formatDate(user.lastActive || user.updatedAt)}</span>
                   </div>
                   <div>
                     <span className="text-gray-500 text-sm">Account Type:</span>
@@ -289,7 +313,7 @@ export default function UserDetailPage() {
                     <Calendar className="h-8 w-8 text-blue-600" />
                     <div className="ml-4">
                       <p className="text-sm font-medium text-gray-500">Cycles Tracked</p>
-                      <p className="text-2xl font-bold text-gray-900">12</p>
+                      <p className="text-2xl font-bold text-gray-900">{user.stats?.cyclesTracked || 0}</p>
                     </div>
                   </div>
                 </CardContent>
@@ -300,7 +324,7 @@ export default function UserDetailPage() {
                     <Activity className="h-8 w-8 text-green-600" />
                     <div className="ml-4">
                       <p className="text-sm font-medium text-gray-500">Symptoms Logged</p>
-                      <p className="text-2xl font-bold text-gray-900">156</p>
+                      <p className="text-2xl font-bold text-gray-900">{user.stats?.symptomsLogged || 0}</p>
                     </div>
                   </div>
                 </CardContent>
@@ -311,7 +335,7 @@ export default function UserDetailPage() {
                     <MessageSquare className="h-8 w-8 text-purple-600" />
                     <div className="ml-4">
                       <p className="text-sm font-medium text-gray-500">AI Conversations</p>
-                      <p className="text-2xl font-bold text-gray-900">8</p>
+                      <p className="text-2xl font-bold text-gray-900">{user.stats?.aiConversations || 0}</p>
                     </div>
                   </div>
                 </CardContent>
@@ -322,7 +346,7 @@ export default function UserDetailPage() {
                     <Stethoscope className="h-8 w-8 text-red-600" />
                     <div className="ml-4">
                       <p className="text-sm font-medium text-gray-500">Consultations</p>
-                      <p className="text-2xl font-bold text-gray-900">3</p>
+                      <p className="text-2xl font-bold text-gray-900">{user.stats?.consultations || 0}</p>
                     </div>
                   </div>
                 </CardContent>
