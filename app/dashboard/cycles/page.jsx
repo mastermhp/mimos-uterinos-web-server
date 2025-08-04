@@ -321,7 +321,7 @@ export default function CyclesPage() {
                 </TableHeader>
                 <TableBody>
                   {filteredCycles.map((cycle) => (
-                    <TableRow key={cycle.id}>
+                    <TableRow key={`cycle-${cycle.id}-${cycle.userId}-${cycle.startDate}`}>
                       <TableCell>
                         <Link
                           href={`/dashboard/users/${cycle.userId}`}

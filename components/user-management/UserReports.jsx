@@ -126,7 +126,9 @@ export default function UserReports({ userId }) {
           <div>
             <Label className="text-sm font-medium text-gray-500">Date Range</Label>
             <p className="text-sm font-medium">
-              {formatDate(report.dateRange.start)} - {formatDate(report.dateRange.end)}
+              {report.dateRange && report.dateRange.start && report.dateRange.end
+                ? `${formatDate(report.dateRange.start)} - ${formatDate(report.dateRange.end)}`
+                : "Date range not available"}
             </p>
           </div>
           <div>
@@ -388,7 +390,9 @@ export default function UserReports({ userId }) {
 
                         <div className="flex items-center space-x-4 text-sm text-gray-500 mb-3">
                           <span>
-                            {formatDate(report.dateRange.start)} - {formatDate(report.dateRange.end)}
+                            {report.dateRange && report.dateRange.start && report.dateRange.end
+                              ? `${formatDate(report.dateRange.start)} - ${formatDate(report.dateRange.end)}`
+                              : "Date range not available"}
                           </span>
                           <span>•</span>
                           <span>Generated {formatDate(report.createdAt)}</span>

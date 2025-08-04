@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import bcrypt from "bcryptjs"
 import { connectToDatabase } from "@/lib/mongodb"
+import { ObjectId } from "mongodb"
 
 // Mock user data with more comprehensive profiles
 const mockUsers = [
@@ -170,7 +171,7 @@ export async function GET(request) {
       filter.accountType = accountType
     }
 
-    if (isActive !== null && isActive !== "") {
+    if (isActive !== null && isActive !== undefined && isActive !== "") {
       filter.isActive = isActive === "true"
     }
 
@@ -202,14 +203,30 @@ export async function GET(request) {
     })
   } catch (error) {
     console.error("Error fetching users:", error)
-    return NextResponse.json({ success: false, message: "Failed to fetch users" }, { status: 500 })
+    return NextResponse.json(
+      { success: false, message: "Failed to fetch users", error: error.message },
+      { status: 500 },
+    )
   }
 }
 
 export async function POST(request) {
   try {
     const { db } = await connectToDatabase()
-    const userData = await request.json()
+
+    // Parse the request body
+    let userData
+    try {
+      userData = await request.json()
+    } catch (error) {
+      console.error("Error parsing request body:", error)
+      return NextResponse.json({ success: false, message: "Invalid request body" }, { status: 400 })
+    }
+
+    // Validate required fields
+    if (!userData.name || !userData.email || !userData.password) {
+      return NextResponse.json({ success: false, message: "Name, email, and password are required" }, { status: 400 })
+    }
 
     // Check if user already exists
     const existingUser = await db.collection("users").findOne({
@@ -224,10 +241,45 @@ export async function POST(request) {
     const saltRounds = 12
     const hashedPassword = await bcrypt.hash(userData.password, saltRounds)
 
-    // Prepare user document
+    // Prepare user document with default values for missing fields
     const newUser = {
-      ...userData,
+      name: userData.name,
+      email: userData.email,
+      phone: userData.phone || "",
+      dateOfBirth: userData.dateOfBirth || "",
+      status: userData.status || "active",
+      accountType: userData.accountType || "user",
+      isActive: userData.isActive !== undefined ? userData.isActive : true,
       password: hashedPassword,
+      requirePasswordChange: userData.requirePasswordChange !== undefined ? userData.requirePasswordChange : true,
+      profile: userData.profile || {
+        height: "",
+        weight: "",
+        bloodType: "",
+        allergies: [],
+        medications: [],
+        medicalConditions: [],
+        emergencyContact: {
+          name: "",
+          phone: "",
+          relationship: "",
+        },
+      },
+      preferences: userData.preferences || {
+        notificationSettings: {
+          periodReminders: true,
+          medicationReminders: true,
+          appointmentReminders: true,
+          healthTips: true,
+          emailNotifications: true,
+          pushNotifications: true,
+        },
+        privacySettings: {
+          shareDataWithDoctors: true,
+          shareAnonymousData: false,
+          allowResearchParticipation: false,
+        },
+      },
       createdAt: new Date(),
       updatedAt: new Date(),
       lastLogin: null,
@@ -237,15 +289,16 @@ export async function POST(request) {
       resetTokenExpiry: null,
     }
 
-    // Remove confirmPassword field
-    delete newUser.confirmPassword
-
     // Insert user
     const result = await db.collection("users").insertOne(newUser)
 
+    if (!result.acknowledged) {
+      throw new Error("Failed to insert user into database")
+    }
+
     // Create initial user profile
     const userProfile = {
-      userId: result.insertedId.toString(),
+      userId: result.insertedId,
       cycleLength: 28,
       periodLength: 5,
       lastPeriodDate: null,
@@ -275,6 +328,89 @@ export async function POST(request) {
     })
   } catch (error) {
     console.error("Error creating user:", error)
-    return NextResponse.json({ success: false, message: "Failed to create user" }, { status: 500 })
+    return NextResponse.json(
+      { success: false, message: "Failed to create user", error: error.message },
+      { status: 500 },
+    )
+  }
+}
+
+export async function PUT(request) {
+  try {
+    const { db } = await connectToDatabase()
+    const userData = await request.json()
+
+    if (!userData.id) {
+      return NextResponse.json({ success: false, message: "User ID is required" }, { status: 400 })
+    }
+
+    // Remove password from update if it's empty
+    if (userData.password === "") {
+      delete userData.password
+    } else if (userData.password) {
+      // Hash password if provided
+      const saltRounds = 12
+      userData.password = await bcrypt.hash(userData.password, saltRounds)
+    }
+
+    // Remove id from update data
+    const { id, _id, ...updateData } = userData
+
+    // Add updated timestamp
+    updateData.updatedAt = new Date()
+
+    const result = await db.collection("users").updateOne({ _id: new ObjectId(id) }, { $set: updateData })
+
+    if (result.matchedCount === 0) {
+      return NextResponse.json({ success: false, message: "User not found" }, { status: 404 })
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: "User updated successfully",
+    })
+  } catch (error) {
+    console.error("Error updating user:", error)
+    return NextResponse.json(
+      { success: false, message: "Failed to update user", error: error.message },
+      { status: 500 },
+    )
+  }
+}
+
+export async function DELETE(request) {
+  try {
+    const { db } = await connectToDatabase()
+    const { searchParams } = new URL(request.url)
+    const id = searchParams.get("id")
+
+    if (!id) {
+      return NextResponse.json({ success: false, message: "User ID is required" }, { status: 400 })
+    }
+
+    // Delete user
+    const result = await db.collection("users").deleteOne({
+      _id: new ObjectId(id),
+    })
+
+    if (result.deletedCount === 0) {
+      return NextResponse.json({ success: false, message: "User not found" }, { status: 404 })
+    }
+
+    // Delete related data
+    await db.collection("userProfiles").deleteMany({ userId: new ObjectId(id) })
+
+    // You can add more collections to clean up here
+
+    return NextResponse.json({
+      success: true,
+      message: "User deleted successfully",
+    })
+  } catch (error) {
+    console.error("Error deleting user:", error)
+    return NextResponse.json(
+      { success: false, message: "Failed to delete user", error: error.message },
+      { status: 500 },
+    )
   }
 }
