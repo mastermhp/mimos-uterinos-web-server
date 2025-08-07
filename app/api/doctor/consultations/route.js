@@ -2,124 +2,141 @@ import { NextResponse } from "next/server"
 import { connectToDatabase } from "@/lib/mongodb"
 import { ObjectId } from "mongodb"
 
-// Mock consultation data
-const mockConsultations = [
-  {
-    id: 1,
-    userId: 1,
-    doctorId: 1,
-    doctorName: "Dr. Sarah Martinez",
-    type: "virtual",
-    status: "scheduled",
-    scheduledDate: "2024-01-20T14:00:00Z",
-    duration: 30,
-    reason: "Irregular periods and severe cramping",
-    notes: "Patient reports irregular cycles for the past 3 months",
-    prescription: null,
-    followUp: null,
-    createdAt: "2024-01-15T10:00:00Z",
-  },
-  {
-    id: 2,
-    userId: 2,
-    doctorId: 2,
-    doctorName: "Dr. Michael Chen",
-    type: "in-person",
-    status: "completed",
-    scheduledDate: "2024-01-10T09:00:00Z",
-    duration: 45,
-    reason: "Routine checkup and cycle consultation",
-    notes: "Normal examination, discussed cycle tracking",
-    prescription: "Recommended iron supplements",
-    followUp: "2024-04-10T09:00:00Z",
-    createdAt: "2024-01-05T11:00:00Z",
-  },
-  {
-    id: 3,
-    userId: 3,
-    doctorId: 1,
-    doctorName: "Dr. Sarah Martinez",
-    type: "virtual",
-    status: "cancelled",
-    scheduledDate: "2024-01-12T16:00:00Z",
-    duration: 30,
-    reason: "Severe PMS symptoms",
-    notes: "Patient cancelled due to scheduling conflict",
-    prescription: null,
-    followUp: null,
-    createdAt: "2024-01-08T14:30:00Z",
-  },
-]
-
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url)
     const userId = searchParams.get("userId")
-    const status = searchParams.get("status")
-    const page = Number.parseInt(searchParams.get("page")) || 1
-    const limit = Number.parseInt(searchParams.get("limit")) || 10
+
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, error: "User ID is required" },
+        { status: 400 }
+      )
+    }
+
+    console.log(`🔍 Fetching consultations for userId: ${userId}`)
 
     const { db } = await connectToDatabase()
-    const query = {}
-    if (userId) query.userId = new ObjectId(userId)
-    if (status) query.status = status
-    const consultations = await db.collection("consultations").find(query).toArray()
+    let consultations = []
 
-    let filteredConsultations = consultations
+    // Try multiple query strategies
+    const queryStrategies = [
+      // Strategy 1: ObjectId format in userId field
+      async () => {
+        if (ObjectId.isValid(userId)) {
+          console.log(`🔍 Query 1: { userId: new ObjectId('${userId}') }`)
+          return await db.collection("consultations").find({ userId: new ObjectId(userId) }).sort({ scheduledDate: -1 }).toArray()
+        }
+        return []
+      },
+      // Strategy 2: String userId
+      async () => {
+        console.log(`🔍 Query 2: { userId: '${userId}' }`)
+        return await db.collection("consultations").find({ userId: userId }).sort({ scheduledDate: -1 }).toArray()
+      },
+      // Strategy 3: Numeric userId
+      async () => {
+        const numericUserId = parseInt(userId)
+        if (!isNaN(numericUserId)) {
+          console.log(`🔍 Query 3: { userId: ${numericUserId} }`)
+          return await db.collection("consultations").find({ userId: numericUserId }).sort({ scheduledDate: -1 }).toArray()
+        }
+        return []
+      }
+    ]
 
-    if (userId) {
-      filteredConsultations = filteredConsultations.filter((c) => c.userId === Number.parseInt(userId))
+    for (let i = 0; i < queryStrategies.length; i++) {
+      try {
+        consultations = await queryStrategies[i]()
+        console.log(`✅ Found consultations from database (strategy ${i + 1}): ${consultations.length}`)
+        if (consultations.length > 0) {
+          break
+        }
+      } catch (error) {
+        console.log(`❌ Strategy ${i + 1} failed:`, error.message)
+        continue
+      }
     }
 
-    if (status) {
-      filteredConsultations = filteredConsultations.filter((c) => c.status === status)
-    }
+    // Normalize consultation data
+    const normalizedConsultations = consultations.map(consultation => ({
+      id: consultation._id?.toString() || consultation.id || Math.random().toString(36).substr(2, 9),
+      userId: consultation.userId,
+      doctorName: consultation.doctorName || "Dr. Unknown",
+      type: consultation.type || "general",
+      scheduledDate: consultation.scheduledDate,
+      duration: consultation.duration || 30,
+      reason: consultation.reason || "",
+      notes: consultation.notes || "",
+      status: consultation.status || "scheduled",
+      createdAt: consultation.createdAt,
+      updatedAt: consultation.updatedAt
+    }))
 
-    const startIndex = (page - 1) * limit
-    const endIndex = startIndex + limit
-    const paginatedConsultations = filteredConsultations.slice(startIndex, endIndex)
+    console.log(`📊 Returning ${normalizedConsultations.length} consultations`)
 
     return NextResponse.json({
       success: true,
-      data: paginatedConsultations,
-      pagination: {
-        page,
-        limit,
-        total: filteredConsultations.length,
-        totalPages: Math.ceil(filteredConsultations.length / limit),
-      },
+      data: normalizedConsultations
     })
+
   } catch (error) {
-    console.error("Error fetching consultations:", error)
-    return NextResponse.json({ success: false, message: "Server error" }, { status: 500 })
+    console.error("❌ Error fetching consultations:", error)
+    return NextResponse.json(
+      { success: false, error: "Failed to fetch consultations" },
+      { status: 500 }
+    )
   }
 }
 
 export async function POST(request) {
   try {
-    const consultationData = await request.json()
+    const body = await request.json()
+    const { userId, doctorName, type, scheduledDate, duration, reason, notes } = body
+
+    if (!userId || !doctorName || !scheduledDate) {
+      return NextResponse.json(
+        { success: false, error: "User ID, doctor name, and scheduled date are required" },
+        { status: 400 }
+      )
+    }
+
+    console.log(`📝 Creating consultation for userId: ${userId}`)
 
     const { db } = await connectToDatabase()
-    const result = await db.collection("consultations").insertOne({
-      ...consultationData,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    })
 
     const newConsultation = {
-      id: result.insertedId,
-      ...consultationData,
+      userId: userId.toString(),
+      doctorName,
+      type: type || "general",
+      scheduledDate,
+      duration: duration || 30,
+      reason: reason || "",
+      notes: notes || "",
       status: "scheduled",
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     }
+
+    const result = await db.collection("consultations").insertOne(newConsultation)
+    
+    const createdConsultation = {
+      id: result.insertedId.toString(),
+      ...newConsultation
+    }
+
+    console.log("✅ Consultation created successfully:", createdConsultation.id)
 
     return NextResponse.json({
       success: true,
-      data: newConsultation,
-      message: "Consultation scheduled successfully",
+      data: createdConsultation
     })
+
   } catch (error) {
-    console.error("Error scheduling consultation:", error)
-    return NextResponse.json({ success: false, message: "Server error" }, { status: 500 })
+    console.error("❌ Error creating consultation:", error)
+    return NextResponse.json(
+      { success: false, error: "Failed to create consultation" },
+      { status: 500 }
+    )
   }
 }

@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
-import { MessageSquare, Bot, User, Send, Eye, Trash2 } from "lucide-react"
+import { MessageSquare, Bot, User, Send, Eye, Trash2 } from 'lucide-react'
 
 export default function UserChats({ userId }) {
   const [chats, setChats] = useState([])
@@ -45,7 +45,7 @@ export default function UserChats({ userId }) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          userId: Number.parseInt(userId),
+          userId: userId,
           message: newMessage,
         }),
       })
@@ -86,8 +86,8 @@ export default function UserChats({ userId }) {
       </DialogHeader>
 
       <div className="flex-1 overflow-y-auto space-y-4 p-4 bg-gray-50 rounded-lg">
-        {chat.messages.map((message) => (
-          <div key={message.id} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
+        {chat.messages.map((message, index) => (
+          <div key={message.id || index} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
             <div
               className={`flex items-start space-x-3 max-w-[80%] ${
                 message.role === "user" ? "flex-row-reverse space-x-reverse" : ""
@@ -156,7 +156,7 @@ export default function UserChats({ userId }) {
           ) : (
             <div className="space-y-4">
               {chats.map((chat) => (
-                <Card key={chat.id} className="hover:shadow-md transition-shadow">
+                <Card key={chat.id || chat._id || Math.random().toString(36).substr(2, 9)} className="hover:shadow-md transition-shadow">
                   <CardContent className="p-4">
                     <div className="flex items-start justify-between">
                       <div className="flex-1">

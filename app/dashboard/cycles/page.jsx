@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Calendar, Search, Eye, Users, TrendingUp, BarChart3 } from "lucide-react"
+import { Calendar, Search, Eye, Users, TrendingUp, BarChart3 } from 'lucide-react'
 import Link from "next/link"
 
 export default function CyclesPage() {
@@ -16,7 +16,7 @@ export default function CyclesPage() {
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
-  const [selectedUser, setSelectedUser] = useState("all") // Updated default value to "all"
+  const [selectedUser, setSelectedUser] = useState("all")
   const [selectedCycle, setSelectedCycle] = useState(null)
   const [stats, setStats] = useState({
     totalCycles: 0,
@@ -33,43 +33,64 @@ export default function CyclesPage() {
     try {
       setLoading(true)
 
-      // Fetch cycles
-      const cyclesResponse = await fetch("/api/cycles")
-      const cyclesData = await cyclesResponse.json()
-
-      // Fetch users
+      // Fetch users first
+      console.log("🔍 Fetching users...")
       const usersResponse = await fetch("/api/users")
       const usersData = await usersResponse.json()
+      console.log("👥 Users response:", usersData)
 
-      if (cyclesData.success) {
-        setCycles(cyclesData.data)
+      if (usersData.success && usersData.data) {
+        setUsers(usersData.data)
+
+        // Fetch cycles for all users
+        console.log("🔍 Fetching cycles for all users...")
+        const allCycles = []
+
+        for (const user of usersData.data) {
+          try {
+            console.log(`🔍 Fetching cycles for user: ${user.id}`)
+            const cyclesResponse = await fetch(`/api/cycles?userId=${user.id}`)
+            const cyclesData = await cyclesResponse.json()
+            
+            if (cyclesData.success && cyclesData.data) {
+              console.log(`✅ Found ${cyclesData.data.length} cycles for user ${user.name}`)
+              allCycles.push(...cyclesData.data)
+            } else {
+              console.log(`⚠️ No cycles found for user ${user.name}:`, cyclesData)
+            }
+          } catch (error) {
+            console.error(`❌ Error fetching cycles for user ${user.id}:`, error)
+          }
+        }
+
+        console.log(`📊 Total cycles found: ${allCycles.length}`)
+        setCycles(allCycles)
 
         // Calculate stats
-        const totalCycles = cyclesData.data.length
+        const totalCycles = allCycles.length
         const avgCycleLength =
-          totalCycles > 0 ? cyclesData.data.reduce((sum, cycle) => sum + cycle.cycleLength, 0) / totalCycles : 0
+          totalCycles > 0 ? allCycles.reduce((sum, cycle) => sum + (cycle.cycleLength || 28), 0) / totalCycles : 0
         const avgPeriodLength =
-          totalCycles > 0 ? cyclesData.data.reduce((sum, cycle) => sum + cycle.periodLength, 0) / totalCycles : 0
+          totalCycles > 0 ? allCycles.reduce((sum, cycle) => sum + (cycle.periodLength || 5), 0) / totalCycles : 0
 
         setStats({
           totalCycles,
           averageCycleLength: Math.round(avgCycleLength * 10) / 10,
           averagePeriodLength: Math.round(avgPeriodLength * 10) / 10,
-          activeUsers: new Set(cyclesData.data.map((c) => c.userId)).size,
+          activeUsers: new Set(allCycles.map((c) => c.userId)).size,
         })
-      }
-
-      if (usersData.success) {
-        setUsers(usersData.data)
+      } else {
+        console.error("❌ Failed to fetch users:", usersData)
       }
     } catch (error) {
-      console.error("Error fetching data:", error)
+      console.error("❌ Error fetching data:", error)
     } finally {
       setLoading(false)
     }
   }
 
   const formatDate = (dateString) => {
+    if (!dateString) return "N/A"
     return new Date(dateString).toLocaleDateString("en-US", {
       year: "numeric",
       month: "short",
@@ -93,7 +114,7 @@ export default function CyclesPage() {
   }
 
   const getUserName = (userId) => {
-    const user = users.find((u) => u.id === userId)
+    const user = users.find((u) => u.id === userId || u.id === userId.toString())
     return user ? user.name : `User ${userId}`
   }
 
@@ -129,19 +150,19 @@ export default function CyclesPage() {
           </div>
           <div>
             <span className="text-sm text-gray-500">Cycle Length:</span>
-            <p className="font-medium">{cycle.cycleLength} days</p>
+            <p className="font-medium">{cycle.cycleLength || 28} days</p>
           </div>
         </div>
 
         <div className="grid grid-cols-2 gap-4">
           <div>
             <span className="text-sm text-gray-500">Period Length:</span>
-            <p className="font-medium">{cycle.periodLength} days</p>
+            <p className="font-medium">{cycle.periodLength || 5} days</p>
           </div>
           <div>
             <span className="text-sm text-gray-500">Flow:</span>
-            <Badge className={getFlowColor(cycle.flow)}>
-              {cycle.flow.charAt(0).toUpperCase() + cycle.flow.slice(1)}
+            <Badge className={getFlowColor(cycle.flow || "medium")}>
+              {(cycle.flow || "medium").charAt(0).toUpperCase() + (cycle.flow || "medium").slice(1)}
             </Badge>
           </div>
         </div>
@@ -149,7 +170,7 @@ export default function CyclesPage() {
         <div className="grid grid-cols-2 gap-4">
           <div>
             <span className="text-sm text-gray-500">Mood:</span>
-            <Badge variant="outline">{cycle.mood}</Badge>
+            <Badge variant="outline">{cycle.mood || "normal"}</Badge>
           </div>
           {cycle.temperature && (
             <div>
@@ -164,7 +185,7 @@ export default function CyclesPage() {
             <span className="text-sm text-gray-500 block mb-2">Symptoms:</span>
             <div className="flex flex-wrap gap-2">
               {cycle.symptoms.map((symptom, index) => (
-                <Badge key={index} variant="secondary">
+                <Badge key={`symptom-${index}`} variant="secondary">
                   {symptom.replace("_", " ")}
                 </Badge>
               ))}
@@ -286,7 +307,7 @@ export default function CyclesPage() {
                 <SelectContent>
                   <SelectItem value="all">All Users</SelectItem>
                   {users.map((user) => (
-                    <SelectItem key={user.id} value={user.id.toString()}>
+                    <SelectItem key={`user-${user.id}`} value={user.id.toString()}>
                       {user.name}
                     </SelectItem>
                   ))}
@@ -303,7 +324,12 @@ export default function CyclesPage() {
               <div className="text-center py-8">
                 <Calendar className="h-12 w-12 text-gray-400 mx-auto mb-4" />
                 <p className="text-gray-500">No cycles found</p>
-                <p className="text-sm text-gray-400">Try adjusting your search or filters</p>
+                <p className="text-sm text-gray-400">
+                  {cycles.length === 0 
+                    ? "No cycle data available in the database" 
+                    : "Try adjusting your search or filters"
+                  }
+                </p>
               </div>
             ) : (
               <Table>
@@ -320,8 +346,8 @@ export default function CyclesPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredCycles.map((cycle) => (
-                    <TableRow key={`cycle-${cycle.id}-${cycle.userId}-${cycle.startDate}`}>
+                  {filteredCycles.map((cycle, index) => (
+                    <TableRow key={`cycle-${cycle.id || index}-${cycle.userId}-${cycle.startDate}`}>
                       <TableCell>
                         <Link
                           href={`/dashboard/users/${cycle.userId}`}
@@ -332,15 +358,15 @@ export default function CyclesPage() {
                       </TableCell>
                       <TableCell>{formatDate(cycle.startDate)}</TableCell>
                       <TableCell>{cycle.endDate ? formatDate(cycle.endDate) : "Ongoing"}</TableCell>
-                      <TableCell>{cycle.cycleLength} days</TableCell>
-                      <TableCell>{cycle.periodLength} days</TableCell>
+                      <TableCell>{cycle.cycleLength || 28} days</TableCell>
+                      <TableCell>{cycle.periodLength || 5} days</TableCell>
                       <TableCell>
-                        <Badge className={getFlowColor(cycle.flow)}>
-                          {cycle.flow.charAt(0).toUpperCase() + cycle.flow.slice(1)}
+                        <Badge className={getFlowColor(cycle.flow || "medium")}>
+                          {(cycle.flow || "medium").charAt(0).toUpperCase() + (cycle.flow || "medium").slice(1)}
                         </Badge>
                       </TableCell>
                       <TableCell>
-                        <Badge variant="outline">{cycle.mood}</Badge>
+                        <Badge variant="outline">{cycle.mood || "normal"}</Badge>
                       </TableCell>
                       <TableCell>
                         <Dialog>

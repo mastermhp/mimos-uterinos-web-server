@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { FileText, Search, Eye, Download, Users, TrendingUp, BarChart3, Calendar } from "lucide-react"
+import { FileText, Search, Eye, Download, Users, TrendingUp, BarChart3, Calendar, RefreshCw } from 'lucide-react'
 import Link from "next/link"
 
 const REPORT_TYPES = [
@@ -16,15 +16,18 @@ const REPORT_TYPES = [
   { value: "yearly", label: "Yearly Overview" },
   { value: "doctor", label: "Medical Summary" },
   { value: "custom", label: "Custom Report" },
+  { value: "health_report", label: "Health Report" },
+  { value: "cycle_analysis", label: "Cycle Analysis" },
 ]
 
 export default function ReportsPage() {
   const [reports, setReports] = useState([])
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [searchTerm, setSearchTerm] = useState("")
-  const [selectedUser, setSelectedUser] = useState("all") // Updated default value
-  const [selectedType, setSelectedType] = useState("all") // Updated default value
+  const [selectedUser, setSelectedUser] = useState("all")
+  const [selectedType, setSelectedType] = useState("all")
   const [selectedReport, setSelectedReport] = useState(null)
   const [stats, setStats] = useState({
     totalReports: 0,
@@ -40,16 +43,24 @@ export default function ReportsPage() {
   const fetchData = async () => {
     try {
       setLoading(true)
+      console.log('🔄 Fetching reports and users data...')
 
-      // Fetch reports
-      const reportsResponse = await fetch("/api/reports")
+      // Fetch reports from admin endpoint
+      const reportsResponse = await fetch("/api/admin/reports?limit=100")
+      console.log('📡 Reports response status:', reportsResponse.status)
+      
       const reportsData = await reportsResponse.json()
+      console.log('📊 Reports data received:', reportsData)
 
-      // Fetch users
-      const usersResponse = await fetch("/api/users")
+      // Fetch users from admin endpoint
+      const usersResponse = await fetch("/api/admin/users?limit=100")
+      console.log('📡 Users response status:', usersResponse.status)
+      
       const usersData = await usersResponse.json()
+      console.log('👥 Users data received:', usersData)
 
-      if (reportsData.success) {
+      if (reportsData.success && reportsData.data) {
+        console.log(`✅ Setting ${reportsData.data.length} reports`)
         setReports(reportsData.data)
 
         // Calculate stats
@@ -64,24 +75,47 @@ export default function ReportsPage() {
           doctorReports,
           activeUsers,
         })
+
+        console.log('📈 Stats calculated:', { totalReports, monthlyReports, doctorReports, activeUsers })
+      } else {
+        console.log('⚠️ No reports data or failed response')
+        setReports([])
       }
 
-      if (usersData.success) {
+      if (usersData.success && usersData.data) {
+        console.log(`✅ Setting ${usersData.data.length} users`)
         setUsers(usersData.data)
+      } else {
+        console.log('⚠️ No users data or failed response')
+        setUsers([])
       }
+
     } catch (error) {
-      console.error("Error fetching data:", error)
+      console.error("❌ Error fetching data:", error)
+      setReports([])
+      setUsers([])
     } finally {
       setLoading(false)
+      setRefreshing(false)
     }
   }
 
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    await fetchData()
+  }
+
   const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    })
+    if (!dateString) return "N/A"
+    try {
+      return new Date(dateString).toLocaleDateString("en-US", {
+        year: "numeric",
+        month: "short",
+        day: "numeric",
+      })
+    } catch (error) {
+      return "Invalid Date"
+    }
   }
 
   const getReportTypeColor = (type) => {
@@ -96,175 +130,200 @@ export default function ReportsPage() {
         return "bg-red-100 text-red-800"
       case "custom":
         return "bg-orange-100 text-orange-800"
+      case "health_report":
+        return "bg-teal-100 text-teal-800"
+      case "cycle_analysis":
+        return "bg-pink-100 text-pink-800"
       default:
         return "bg-gray-100 text-gray-800"
     }
   }
 
   const getUserName = (userId) => {
-    const user = users.find((u) => u.id === userId)
-    return user ? user.name : `User ${userId}`
+    if (!userId) return "Unknown User"
+    const user = users.find((u) => u.id?.toString() === userId.toString() || u._id?.toString() === userId.toString())
+    return user ? (user.name || user.username || `User ${userId}`) : `User ${userId}`
   }
 
   const filteredReports = reports.filter((report) => {
+    if (!report) return false
+    
     const userName = getUserName(report.userId).toLowerCase()
+    const reportTitle = (report.title || "").toLowerCase()
     const matchesSearch =
-      userName.includes(searchTerm.toLowerCase()) || report.title.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesUser = selectedUser === "all" || report.userId.toString() === selectedUser
+      userName.includes(searchTerm.toLowerCase()) || 
+      reportTitle.includes(searchTerm.toLowerCase())
+    const matchesUser = selectedUser === "all" || report.userId?.toString() === selectedUser
     const matchesType = selectedType === "all" || report.type === selectedType
     return matchesSearch && matchesUser && matchesType
   })
 
-  const ReportDetailsDialog = ({ report }) => (
-    <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
-      <DialogHeader>
-        <DialogTitle className="flex items-center space-x-2">
-          <FileText className="h-5 w-5" />
-          <span>{report.title}</span>
-        </DialogTitle>
-      </DialogHeader>
+  const ReportDetailsDialog = ({ report }) => {
+    if (!report) return null
 
-      <div className="space-y-6">
-        {/* Report Info */}
-        <div className="grid grid-cols-3 gap-4">
-          <div>
-            <span className="text-sm text-gray-500">User:</span>
-            <Link
-              href={`/dashboard/users/${report.userId}`}
-              className="block font-medium text-blue-600 hover:text-blue-800"
-            >
-              {getUserName(report.userId)}
-            </Link>
+    return (
+      <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center space-x-2">
+            <FileText className="h-5 w-5" />
+            <span>{report.title || "Health Report"}</span>
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-6">
+          {/* Report Info */}
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <span className="text-sm text-gray-500">User:</span>
+              <Link
+                href={`/dashboard/users/${report.userId}`}
+                className="block font-medium text-blue-600 hover:text-blue-800"
+              >
+                {getUserName(report.userId)}
+              </Link>
+            </div>
+            <div>
+              <span className="text-sm text-gray-500">Report Type:</span>
+              <Badge className={getReportTypeColor(report.type)}>
+                {REPORT_TYPES.find((t) => t.value === report.type)?.label || report.type}
+              </Badge>
+            </div>
+            <div>
+              <span className="text-sm text-gray-500">Generated:</span>
+              <p className="font-medium">{formatDate(report.createdAt)}</p>
+            </div>
           </div>
-          <div>
-            <span className="text-sm text-gray-500">Report Type:</span>
-            <Badge className={getReportTypeColor(report.type)}>
-              {REPORT_TYPES.find((t) => t.value === report.type)?.label || report.type}
-            </Badge>
-          </div>
-          <div>
-            <span className="text-sm text-gray-500">Generated:</span>
-            <p className="font-medium">{formatDate(report.createdAt)}</p>
-          </div>
+
+          {report.dateRange && (
+            <div>
+              <span className="text-sm text-gray-500">Date Range:</span>
+              <p className="font-medium">
+                {formatDate(report.dateRange.start)} - {formatDate(report.dateRange.end)}
+              </p>
+            </div>
+          )}
+
+          {/* Report Content */}
+          {report.content && (
+            <div>
+              <h4 className="font-medium text-gray-900 mb-3">Report Content</h4>
+              <div className="p-4 bg-gray-50 rounded-lg">
+                <p className="text-sm text-gray-700 whitespace-pre-wrap">{report.content}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Key Metrics */}
+          {report.data && Object.keys(report.data).length > 0 && (
+            <div>
+              <h4 className="font-medium text-gray-900 mb-4">Key Metrics</h4>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {report.data.cyclesTracked !== undefined && (
+                  <Card>
+                    <CardContent className="p-4">
+                      <div className="flex items-center">
+                        <Calendar className="h-8 w-8 text-blue-600" />
+                        <div className="ml-3">
+                          <p className="text-sm font-medium text-gray-500">Cycles Tracked</p>
+                          <p className="text-2xl font-bold text-gray-900">{report.data.cyclesTracked}</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {report.data.averageCycleLength && (
+                  <Card>
+                    <CardContent className="p-4">
+                      <div className="flex items-center">
+                        <TrendingUp className="h-8 w-8 text-green-600" />
+                        <div className="ml-3">
+                          <p className="text-sm font-medium text-gray-500">Avg Cycle Length</p>
+                          <p className="text-2xl font-bold text-gray-900">{report.data.averageCycleLength} days</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {report.data.averagePeriodLength && (
+                  <Card>
+                    <CardContent className="p-4">
+                      <div className="flex items-center">
+                        <BarChart3 className="h-8 w-8 text-purple-600" />
+                        <div className="ml-3">
+                          <p className="text-sm font-medium text-gray-500">Avg Period Length</p>
+                          <p className="text-2xl font-bold text-gray-900">{report.data.averagePeriodLength} days</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {report.data.consultations !== undefined && (
+                  <Card>
+                    <CardContent className="p-4">
+                      <div className="flex items-center">
+                        <FileText className="h-8 w-8 text-red-600" />
+                        <div className="ml-3">
+                          <p className="text-sm font-medium text-gray-500">Consultations</p>
+                          <p className="text-2xl font-bold text-gray-900">{report.data.consultations}</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Common Symptoms */}
+          {report.data?.commonSymptoms && report.data.commonSymptoms.length > 0 && (
+            <div>
+              <h4 className="font-medium text-gray-900 mb-3">Most Common Symptoms</h4>
+              <div className="flex flex-wrap gap-2">
+                {report.data.commonSymptoms.map((symptom, index) => (
+                  <Badge key={index} variant="secondary">
+                    {symptom.replace("_", " ")}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Mood Trends */}
+          {report.data?.moodTrends && Object.keys(report.data.moodTrends).length > 0 && (
+            <div>
+              <h4 className="font-medium text-gray-900 mb-3">Mood Trends</h4>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                {Object.entries(report.data.moodTrends).map(([mood, count]) => (
+                  <div key={mood} className="text-center p-3 bg-gray-50 rounded-lg">
+                    <p className="text-sm text-gray-500 capitalize">{mood}</p>
+                    <p className="text-xl font-bold text-gray-900">{count} days</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* AI Insights */}
+          {report.insights && report.insights.length > 0 && (
+            <div>
+              <h4 className="font-medium text-gray-900 mb-3">AI Insights</h4>
+              <div className="space-y-2">
+                {report.insights.map((insight, index) => (
+                  <div key={index} className="flex items-start space-x-3 p-3 bg-blue-50 rounded-lg">
+                    <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 flex-shrink-0"></div>
+                    <p className="text-sm text-blue-800">{insight}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
-
-        <div>
-          <span className="text-sm text-gray-500">Date Range:</span>
-          <p className="font-medium">
-            {formatDate(report.dateRange.start)} - {formatDate(report.dateRange.end)}
-          </p>
-        </div>
-
-        {/* Key Metrics */}
-        {report.data && (
-          <div>
-            <h4 className="font-medium text-gray-900 mb-4">Key Metrics</h4>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {report.data.cyclesTracked !== undefined && (
-                <Card>
-                  <CardContent className="p-4">
-                    <div className="flex items-center">
-                      <Calendar className="h-8 w-8 text-blue-600" />
-                      <div className="ml-3">
-                        <p className="text-sm font-medium text-gray-500">Cycles Tracked</p>
-                        <p className="text-2xl font-bold text-gray-900">{report.data.cyclesTracked}</p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-
-              {report.data.averageCycleLength && (
-                <Card>
-                  <CardContent className="p-4">
-                    <div className="flex items-center">
-                      <TrendingUp className="h-8 w-8 text-green-600" />
-                      <div className="ml-3">
-                        <p className="text-sm font-medium text-gray-500">Avg Cycle Length</p>
-                        <p className="text-2xl font-bold text-gray-900">{report.data.averageCycleLength} days</p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-
-              {report.data.averagePeriodLength && (
-                <Card>
-                  <CardContent className="p-4">
-                    <div className="flex items-center">
-                      <BarChart3 className="h-8 w-8 text-purple-600" />
-                      <div className="ml-3">
-                        <p className="text-sm font-medium text-gray-500">Avg Period Length</p>
-                        <p className="text-2xl font-bold text-gray-900">{report.data.averagePeriodLength} days</p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-
-              {report.data.consultations !== undefined && (
-                <Card>
-                  <CardContent className="p-4">
-                    <div className="flex items-center">
-                      <FileText className="h-8 w-8 text-red-600" />
-                      <div className="ml-3">
-                        <p className="text-sm font-medium text-gray-500">Consultations</p>
-                        <p className="text-2xl font-bold text-gray-900">{report.data.consultations}</p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Common Symptoms */}
-        {report.data?.commonSymptoms && report.data.commonSymptoms.length > 0 && (
-          <div>
-            <h4 className="font-medium text-gray-900 mb-3">Most Common Symptoms</h4>
-            <div className="flex flex-wrap gap-2">
-              {report.data.commonSymptoms.map((symptom, index) => (
-                <Badge key={index} variant="secondary">
-                  {symptom.replace("_", " ")}
-                </Badge>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Mood Trends */}
-        {report.data?.moodTrends && (
-          <div>
-            <h4 className="font-medium text-gray-900 mb-3">Mood Trends</h4>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {Object.entries(report.data.moodTrends).map(([mood, count]) => (
-                <div key={mood} className="text-center p-3 bg-gray-50 rounded-lg">
-                  <p className="text-sm text-gray-500 capitalize">{mood}</p>
-                  <p className="text-xl font-bold text-gray-900">{count} days</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* AI Insights */}
-        {report.insights && report.insights.length > 0 && (
-          <div>
-            <h4 className="font-medium text-gray-900 mb-3">AI Insights</h4>
-            <div className="space-y-2">
-              {report.insights.map((insight, index) => (
-                <div key={index} className="flex items-start space-x-3 p-3 bg-blue-50 rounded-lg">
-                  <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 flex-shrink-0"></div>
-                  <p className="text-sm text-blue-800">{insight}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-      </div>
-    </DialogContent>
-  )
+      </DialogContent>
+    )
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -279,6 +338,10 @@ export default function ReportsPage() {
               </h1>
               <p className="text-gray-500">View and manage health reports and analytics</p>
             </div>
+            <Button onClick={handleRefresh} disabled={refreshing} variant="outline">
+              <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+              {refreshing ? 'Refreshing...' : 'Refresh Data'}
+            </Button>
           </div>
         </div>
       </div>
@@ -339,7 +402,10 @@ export default function ReportsPage() {
         <Card>
           <CardHeader>
             <CardTitle>Health Reports</CardTitle>
-            <CardDescription>View and manage all generated health reports</CardDescription>
+            <CardDescription>
+              View and manage all generated health reports
+              {reports.length > 0 && ` (${reports.length} total)`}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex flex-col sm:flex-row gap-4 mb-6">
@@ -361,8 +427,8 @@ export default function ReportsPage() {
                 <SelectContent>
                   <SelectItem value="all">All Users</SelectItem>
                   {users.map((user) => (
-                    <SelectItem key={user.id} value={user.id.toString()}>
-                      {user.name}
+                    <SelectItem key={user.id || user._id} value={(user.id || user._id).toString()}>
+                      {user.name || user.username || `User ${user.id || user._id}`}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -390,8 +456,15 @@ export default function ReportsPage() {
             ) : filteredReports.length === 0 ? (
               <div className="text-center py-8">
                 <FileText className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                <p className="text-gray-500">No reports found</p>
-                <p className="text-sm text-gray-400">Try adjusting your search or filters</p>
+                <p className="text-gray-500">
+                  {reports.length === 0 ? "No reports found in database" : "No reports match your filters"}
+                </p>
+                <p className="text-sm text-gray-400">
+                  {reports.length === 0 
+                    ? "Reports will appear here once users generate health reports" 
+                    : "Try adjusting your search or filters"
+                  }
+                </p>
               </div>
             ) : (
               <div className="space-y-4">
@@ -415,15 +488,19 @@ export default function ReportsPage() {
                               {getUserName(report.userId)}
                             </Link>
                             <span>•</span>
-                            <span>
-                              {formatDate(report.dateRange.start)} - {formatDate(report.dateRange.end)}
-                            </span>
-                            <span>•</span>
+                            {report.dateRange && (
+                              <>
+                                <span>
+                                  {formatDate(report.dateRange.start)} - {formatDate(report.dateRange.end)}
+                                </span>
+                                <span>•</span>
+                              </>
+                            )}
                             <span>Generated {formatDate(report.createdAt)}</span>
                           </div>
 
                           {/* Quick Stats */}
-                          {report.data && (
+                          {report.data && Object.keys(report.data).length > 0 && (
                             <div className="flex items-center space-x-6 text-sm">
                               {report.data.cyclesTracked !== undefined && (
                                 <div className="flex items-center space-x-1">

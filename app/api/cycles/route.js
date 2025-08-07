@@ -2,122 +2,145 @@ import { NextResponse } from "next/server"
 import { connectToDatabase } from "@/lib/mongodb"
 import { ObjectId } from "mongodb"
 
-// Mock cycle data
-const mockCycles = [
-  {
-    id: 1,
-    userId: 1,
-    startDate: "2024-01-01",
-    endDate: "2024-01-05",
-    cycleLength: 28,
-    periodLength: 5,
-    symptoms: [
-      { date: "2024-01-01", symptoms: ["cramps", "mood_swings"], severity: "moderate" },
-      { date: "2024-01-02", symptoms: ["cramps", "bloating"], severity: "mild" },
-      { date: "2024-01-03", symptoms: ["fatigue"], severity: "mild" },
-    ],
-    flow: [
-      { date: "2024-01-01", flow: "heavy" },
-      { date: "2024-01-02", flow: "medium" },
-      { date: "2024-01-03", flow: "light" },
-      { date: "2024-01-04", flow: "light" },
-      { date: "2024-01-05", flow: "spotting" },
-    ],
-    mood: [
-      { date: "2024-01-01", mood: "irritable" },
-      { date: "2024-01-02", mood: "sad" },
-      { date: "2024-01-03", mood: "normal" },
-    ],
-    notes: "Regular cycle, no unusual symptoms",
-    createdAt: "2024-01-01T09:00:00Z",
-  },
-  {
-    id: 2,
-    userId: 2,
-    startDate: "2024-01-08",
-    endDate: "2024-01-12",
-    cycleLength: 30,
-    periodLength: 4,
-    symptoms: [
-      { date: "2024-01-08", symptoms: ["bloating", "fatigue"], severity: "mild" },
-      { date: "2024-01-09", symptoms: ["headache"], severity: "moderate" },
-    ],
-    flow: [
-      { date: "2024-01-08", flow: "medium" },
-      { date: "2024-01-09", flow: "heavy" },
-      { date: "2024-01-10", flow: "medium" },
-      { date: "2024-01-11", flow: "light" },
-    ],
-    mood: [
-      { date: "2024-01-08", mood: "normal" },
-      { date: "2024-01-09", mood: "happy" },
-    ],
-    notes: "Shorter period this month",
-    createdAt: "2024-01-08T08:30:00Z",
-  },
-]
-
 export async function GET(request) {
   try {
     const { searchParams } = new URL(request.url)
     const userId = searchParams.get("userId")
-    const page = Number.parseInt(searchParams.get("page")) || 1
-    const limit = Number.parseInt(searchParams.get("limit")) || 10
 
-    const { db } = await connectToDatabase()
-    const query = {}
-    if (userId) query.userId = new ObjectId(userId)
-    const cycles = await db.collection("cycles").find(query).toArray()
-
-    let filteredCycles = cycles
-    if (userId) {
-      filteredCycles = cycles.filter((cycle) => cycle.userId.toString() === userId)
+    if (!userId) {
+      return NextResponse.json(
+        { success: false, error: "User ID is required" },
+        { status: 400 }
+      )
     }
 
-    const startIndex = (page - 1) * limit
-    const endIndex = startIndex + limit
-    const paginatedCycles = filteredCycles.slice(startIndex, endIndex)
+    console.log(`🔍 Fetching cycles for userId: ${userId}`)
+
+    const { db } = await connectToDatabase()
+    let cycles = []
+
+    // Try multiple query strategies
+    const queryStrategies = [
+      // Strategy 1: ObjectId format in userId field
+      async () => {
+        if (ObjectId.isValid(userId)) {
+          console.log(`🔍 Query 1: { userId: new ObjectId('${userId}') }`)
+          return await db.collection("cycles").find({ userId: new ObjectId(userId) }).sort({ startDate: -1 }).toArray()
+        }
+        return []
+      },
+      // Strategy 2: String userId
+      async () => {
+        console.log(`🔍 Query 2: { userId: '${userId}' }`)
+        return await db.collection("cycles").find({ userId: userId }).sort({ startDate: -1 }).toArray()
+      },
+      // Strategy 3: Numeric userId
+      async () => {
+        const numericUserId = parseInt(userId)
+        if (!isNaN(numericUserId)) {
+          console.log(`🔍 Query 3: { userId: ${numericUserId} }`)
+          return await db.collection("cycles").find({ userId: numericUserId }).sort({ startDate: -1 }).toArray()
+        }
+        return []
+      }
+    ]
+
+    for (let i = 0; i < queryStrategies.length; i++) {
+      try {
+        cycles = await queryStrategies[i]()
+        console.log(`✅ Found cycles from database (strategy ${i + 1}): ${cycles.length}`)
+        if (cycles.length > 0) {
+          break
+        }
+      } catch (error) {
+        console.log(`❌ Strategy ${i + 1} failed:`, error.message)
+        continue
+      }
+    }
+
+    // Normalize cycle data
+    const normalizedCycles = cycles.map(cycle => ({
+      id: cycle._id?.toString() || cycle.id || Math.random().toString(36).substr(2, 9),
+      userId: cycle.userId,
+      startDate: cycle.startDate,
+      endDate: cycle.endDate,
+      cycleLength: cycle.cycleLength || 28,
+      periodLength: cycle.periodLength || 5,
+      flow: cycle.flow || "medium",
+      mood: cycle.mood || "normal",
+      symptoms: cycle.symptoms || [],
+      temperature: cycle.temperature,
+      notes: cycle.notes || "",
+      createdAt: cycle.createdAt,
+      updatedAt: cycle.updatedAt
+    }))
+
+    console.log(`📊 Returning ${normalizedCycles.length} cycles`)
 
     return NextResponse.json({
       success: true,
-      data: paginatedCycles,
-      pagination: {
-        page,
-        limit,
-        total: filteredCycles.length,
-        totalPages: Math.ceil(filteredCycles.length / limit),
-      },
+      data: normalizedCycles
     })
+
   } catch (error) {
-    console.error("Error fetching cycles:", error)
-    return NextResponse.json({ success: false, message: "Server error" }, { status: 500 })
+    console.error("❌ Error fetching cycles:", error)
+    return NextResponse.json(
+      { success: false, error: "Failed to fetch cycles" },
+      { status: 500 }
+    )
   }
 }
 
 export async function POST(request) {
   try {
-    const cycleData = await request.json()
+    const body = await request.json()
+    const { userId, startDate, endDate, cycleLength, periodLength, flow, mood, symptoms, temperature, notes } = body
+
+    if (!userId || !startDate) {
+      return NextResponse.json(
+        { success: false, error: "User ID and start date are required" },
+        { status: 400 }
+      )
+    }
+
+    console.log(`📝 Creating cycle for userId: ${userId}`)
 
     const { db } = await connectToDatabase()
-    const result = await db.collection("cycles").insertOne({
-      ...cycleData,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    })
 
     const newCycle = {
-      id: result.insertedId,
-      ...cycleData,
+      userId: userId.toString(),
+      startDate,
+      endDate: endDate || null,
+      cycleLength: cycleLength || 28,
+      periodLength: periodLength || 5,
+      flow: flow || "medium",
+      mood: mood || "normal",
+      symptoms: symptoms || [],
+      temperature: temperature || null,
+      notes: notes || "",
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     }
+
+    const result = await db.collection("cycles").insertOne(newCycle)
+    
+    const createdCycle = {
+      id: result.insertedId.toString(),
+      ...newCycle
+    }
+
+    console.log("✅ Cycle created successfully:", createdCycle.id)
 
     return NextResponse.json({
       success: true,
-      data: newCycle,
-      message: "Cycle data saved successfully",
+      data: createdCycle
     })
+
   } catch (error) {
-    console.error("Error saving cycle:", error)
-    return NextResponse.json({ success: false, message: "Server error" }, { status: 500 })
+    console.error("❌ Error creating cycle:", error)
+    return NextResponse.json(
+      { success: false, error: "Failed to create cycle" },
+      { status: 500 }
+    )
   }
 }

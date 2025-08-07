@@ -7,70 +7,117 @@ export async function POST(request) {
   try {
     const { email, password } = await request.json()
 
+    console.log('🔐 Login attempt for:', email)
+
     if (!email || !password) {
-      return NextResponse.json({ success: false, message: "Email and password are required" }, { status: 400 })
+      console.log('❌ Missing email or password')
+      return NextResponse.json(
+        { success: false, message: "Email and password are required" },
+        { status: 400 }
+      )
     }
 
+    // Connect to database
+    console.log('🔄 Connecting to database...')
     const { db } = await connectToDatabase()
+    console.log('✅ Database connected')
 
-    // Find user by email
-    const user = await db.collection("users").findOne({ email: email.toLowerCase() })
+    // Find user by email (case-insensitive)
+    console.log('🔍 Looking for user with email:', email)
+    const user = await db.collection("users").findOne({ 
+      email: { $regex: new RegExp(`^${email}$`, 'i') }
+    })
 
     if (!user) {
-      return NextResponse.json({ success: false, message: "Invalid email or password" }, { status: 401 })
+      console.log('❌ User not found with email:', email)
+      
+      // Check if any users exist in the database
+      const userCount = await db.collection("users").countDocuments()
+      console.log('📊 Total users in database:', userCount)
+      
+      if (userCount === 0) {
+        console.log('⚠️ No users found in database. You may need to seed the admin user.')
+      }
+      
+      return NextResponse.json(
+        { success: false, message: "Invalid credentials" },
+        { status: 401 }
+      )
     }
 
-    // Check if user is active
-    if (user.status !== "active") {
-      return NextResponse.json({ success: false, message: "Account is not active" }, { status: 401 })
-    }
+    console.log('✅ User found:', { id: user._id, email: user.email, accountType: user.accountType })
 
     // Verify password
+    console.log('🔐 Verifying password...')
     const isPasswordValid = await bcrypt.compare(password, user.password)
 
     if (!isPasswordValid) {
-      return NextResponse.json({ success: false, message: "Invalid email or password" }, { status: 401 })
+      console.log('❌ Invalid password for user:', email)
+      return NextResponse.json(
+        { success: false, message: "Invalid credentials" },
+        { status: 401 }
+      )
     }
 
-    // Update last active timestamp
-    await db.collection("users").updateOne({ _id: user._id }, { $set: { lastActive: new Date() } })
+    console.log('✅ Password verified successfully')
+
+    // Update last login
+    await db.collection("users").updateOne(
+      { _id: user._id },
+      { 
+        $set: { 
+          lastLogin: new Date(),
+          updatedAt: new Date()
+        } 
+      }
+    )
 
     // Generate JWT token
     const token = jwt.sign(
-      {
-        userId: user._id,
+      { 
+        userId: user._id.toString(), 
         email: user.email,
-        name: user.name,
+        accountType: user.accountType || 'user'
       },
-      process.env.JWT_SECRET || "your-secret-key",
-      { expiresIn: "7d" },
+      process.env.JWT_SECRET,
+      { expiresIn: "7d" }
     )
 
-    // Remove password from response
-    const { password: _, ...userWithoutPassword } = user
+    console.log('✅ Login successful for:', email)
 
+    // Return success response
     return NextResponse.json({
       success: true,
       message: "Login successful",
-      data: {
-        token,
-        user: {
-          id: user._id,
-          name: user.name,
-          email: user.email,
-          phone: user.phone,
-          dateOfBirth: user.dateOfBirth,
-          status: user.status,
-          premium: user.premium || false,
-          profile: user.profile,
-          createdAt: user.createdAt,
-          updatedAt: user.updatedAt,
-        },
-        requiresPasswordChange: user.requiresPasswordChange || false,
-      },
+      token,
+      user: {
+        id: user._id.toString(),
+        name: user.name,
+        email: user.email,
+        accountType: user.accountType || 'user',
+        status: user.status || 'active'
+      }
     })
+
   } catch (error) {
-    console.error("Login error:", error)
-    return NextResponse.json({ success: false, message: "Internal server error" }, { status: 500 })
+    console.error("❌ Login error:", error)
+    
+    // Return detailed error in development
+    if (process.env.NODE_ENV === 'development') {
+      return NextResponse.json(
+        { 
+          success: false, 
+          message: "Server error", 
+          error: error.message,
+          stack: error.stack 
+        },
+        { status: 500 }
+      )
+    }
+    
+    return NextResponse.json(
+      { success: false, message: "Server error" },
+      { status: 500 }
+    )
   }
 }

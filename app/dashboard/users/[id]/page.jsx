@@ -8,7 +8,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
-import { ArrowLeft, Calendar, Mail, Phone, MapPin, Clock, Crown } from "lucide-react"
+import { ArrowLeft, Calendar, Mail, Phone, MapPin, Clock, Crown } from 'lucide-react'
 import UserCycles from "@/components/user-management/UserCycles"
 import UserSymptoms from "@/components/user-management/UserSymptoms"
 import UserChats from "@/components/user-management/UserChats"
@@ -25,6 +25,7 @@ export default function UserDetailPage({ params }) {
   useEffect(() => {
     const fetchUser = async () => {
       try {
+        console.log('🔍 Fetching user with ID:', id)
         const response = await fetch(`/api/users/${id}`)
 
         if (!response.ok) {
@@ -34,6 +35,7 @@ export default function UserDetailPage({ params }) {
         const data = await response.json()
 
         if (data.success) {
+          console.log('✅ User fetched successfully:', data.data)
           setUser(data.data)
         } else {
           throw new Error(data.message || "Failed to fetch user")
@@ -96,6 +98,11 @@ export default function UserDetailPage({ params }) {
       default:
         return "bg-gray-500 hover:bg-gray-600"
     }
+  }
+
+  // Helper function to check if user is premium
+  const isPremiumUser = (user) => {
+    return user?.accountType === "premium" || user?.premium === true
   }
 
   if (loading) {
@@ -231,19 +238,13 @@ export default function UserDetailPage({ params }) {
               <div>
                 <h3 className="text-lg font-semibold">{user.name || "No Name"}</h3>
                 <p className="text-sm text-gray-500">
-                  {user.accountType ? (
-                    <>
-                      {user.accountType === "premium" && (
-                        <span className="flex items-center">
-                          <Crown className="h-4 w-4 text-yellow-500 mr-1" />
-                          Premium User
-                        </span>
-                      )}
-                      {user.accountType === "user" && "Regular User"}
-                      {user.accountType === "doctor" && "Doctor"}
-                    </>
+                  {isPremiumUser(user) ? (
+                    <span className="flex items-center">
+                      <Crown className="h-4 w-4 text-yellow-500 mr-1" />
+                      Premium User
+                    </span>
                   ) : (
-                    "User"
+                    "Regular User"
                   )}
                 </p>
               </div>
@@ -278,7 +279,7 @@ export default function UserDetailPage({ params }) {
 
               <div className="flex items-center space-x-2 text-sm">
                 <Clock className="h-4 w-4 text-gray-500" />
-                <span>Joined {formatDate(user.createdAt)}</span>
+                <span>Joined {formatDate(user.joinedAt || user.createdAt)}</span>
               </div>
 
               {user.lastLogin && (
@@ -315,7 +316,7 @@ export default function UserDetailPage({ params }) {
                   <CardDescription>View and manage user's menstrual cycle data</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <UserCycles userId={user.id} />
+                  <UserCycles userId={user.id || user._id} />
                 </CardContent>
               </Card>
             </TabsContent>
@@ -327,7 +328,7 @@ export default function UserDetailPage({ params }) {
                   <CardDescription>View user's tracked symptoms and health data</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <UserSymptoms userId={user.id} />
+                  <UserSymptoms userId={user.id || user._id} />
                 </CardContent>
               </Card>
             </TabsContent>
@@ -339,7 +340,7 @@ export default function UserDetailPage({ params }) {
                   <CardDescription>View user's conversations with the AI assistant</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <UserChats userId={user.id} />
+                  <UserChats userId={user.id || user._id} />
                 </CardContent>
               </Card>
             </TabsContent>
@@ -351,7 +352,7 @@ export default function UserDetailPage({ params }) {
                   <CardDescription>View user's doctor consultation history</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <UserConsultations userId={user.id} />
+                  <UserConsultations userId={user.id || user._id} />
                 </CardContent>
               </Card>
             </TabsContent>
@@ -363,7 +364,7 @@ export default function UserDetailPage({ params }) {
                   <CardDescription>View user's generated health reports</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <UserReports userId={user.id} />
+                  <UserReports userId={user.id || user._id} />
                 </CardContent>
               </Card>
             </TabsContent>

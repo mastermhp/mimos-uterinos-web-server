@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { MessageSquare, Search, Bot, User, Eye, Users, TrendingUp, MessageCircle } from "lucide-react"
+import { MessageSquare, Search, Bot, User, Eye, Users, TrendingUp, MessageCircle } from 'lucide-react'
 import Link from "next/link"
 
 export default function AIPage() {
@@ -16,7 +16,7 @@ export default function AIPage() {
   const [users, setUsers] = useState([])
   const [loading, setLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState("")
-  const [selectedUser, setSelectedUser] = useState("all") // Updated default value to "all"
+  const [selectedUser, setSelectedUser] = useState("all")
   const [selectedChat, setSelectedChat] = useState(null)
   const [stats, setStats] = useState({
     totalChats: 0,
@@ -32,21 +32,25 @@ export default function AIPage() {
   const fetchData = async () => {
     try {
       setLoading(true)
+      console.log("🔍 Fetching AI chats and users data...")
 
-      // Fetch chats
-      const chatsResponse = await fetch("/api/ai/chat")
+      // Fetch chats from admin endpoint
+      const chatsResponse = await fetch("/api/admin/chats")
       const chatsData = await chatsResponse.json()
+      console.log("📊 Chats response:", chatsData)
 
-      // Fetch users
-      const usersResponse = await fetch("/api/users")
+      // Fetch users from admin endpoint
+      const usersResponse = await fetch("/api/admin/users")
       const usersData = await usersResponse.json()
+      console.log("📊 Users response:", usersData)
 
-      if (chatsData.success) {
+      if (chatsData.success && chatsData.data) {
         setChats(chatsData.data)
+        console.log(`✅ Loaded ${chatsData.data.length} AI chats`)
 
         // Calculate stats
         const totalChats = chatsData.data.length
-        const totalMessages = chatsData.data.reduce((sum, chat) => sum + chat.messages.length, 0)
+        const totalMessages = chatsData.data.reduce((sum, chat) => sum + (chat.messages?.length || 0), 0)
         const activeUsers = new Set(chatsData.data.map((c) => c.userId)).size
         const avgMessagesPerChat = totalChats > 0 ? Math.round((totalMessages / totalChats) * 10) / 10 : 0
 
@@ -56,19 +60,31 @@ export default function AIPage() {
           activeUsers,
           avgMessagesPerChat,
         })
+
+        console.log(`📈 AI Chat Stats: ${totalChats} chats, ${totalMessages} messages, ${activeUsers} active users`)
+      } else {
+        console.log("❌ Failed to fetch chats:", chatsData.error)
+        setChats([])
       }
 
-      if (usersData.success) {
+      if (usersData.success && usersData.data) {
         setUsers(usersData.data)
+        console.log(`✅ Loaded ${usersData.data.length} users`)
+      } else {
+        console.log("❌ Failed to fetch users:", usersData.error)
+        setUsers([])
       }
     } catch (error) {
-      console.error("Error fetching data:", error)
+      console.error("❌ Error fetching data:", error)
+      setChats([])
+      setUsers([])
     } finally {
       setLoading(false)
     }
   }
 
   const formatDate = (dateString) => {
+    if (!dateString) return "Unknown date"
     return new Date(dateString).toLocaleDateString("en-US", {
       year: "numeric",
       month: "short",
@@ -79,6 +95,7 @@ export default function AIPage() {
   }
 
   const formatTime = (dateString) => {
+    if (!dateString) return "Unknown time"
     return new Date(dateString).toLocaleTimeString("en-US", {
       hour: "2-digit",
       minute: "2-digit",
@@ -86,14 +103,15 @@ export default function AIPage() {
   }
 
   const getUserName = (userId) => {
-    const user = users.find((u) => u.id === userId)
-    return user ? user.name : `User ${userId}`
+    if (!userId) return "Unknown User"
+    const user = users.find((u) => u.id === userId || u.id === userId.toString())
+    return user ? user.name : `User ${userId.toString().slice(-4)}`
   }
 
   const filteredChats = chats.filter((chat) => {
     const userName = getUserName(chat.userId).toLowerCase()
     const matchesSearch = userName.includes(searchTerm.toLowerCase())
-    const matchesUser = selectedUser === "all" || chat.userId.toString() === selectedUser
+    const matchesUser = selectedUser === "all" || chat.userId?.toString() === selectedUser
     return matchesSearch && matchesUser
   })
 
@@ -106,8 +124,8 @@ export default function AIPage() {
       </DialogHeader>
 
       <div className="flex-1 overflow-y-auto space-y-4 p-4 bg-gray-50 rounded-lg">
-        {chat.messages.map((message) => (
-          <div key={message.id} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
+        {(chat.messages || []).map((message, index) => (
+          <div key={message.id || index} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}>
             <div
               className={`flex items-start space-x-3 max-w-[80%] ${
                 message.role === "user" ? "flex-row-reverse space-x-reverse" : ""
@@ -135,7 +153,7 @@ export default function AIPage() {
                   message.role === "user" ? "bg-blue-600 text-white" : "bg-white border border-gray-200"
                 }`}
               >
-                <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+                <p className="text-sm whitespace-pre-wrap">{message.content || "No content"}</p>
                 <p className={`text-xs mt-2 ${message.role === "user" ? "text-blue-100" : "text-gray-500"}`}>
                   {formatTime(message.timestamp)}
                 </p>
@@ -169,6 +187,9 @@ export default function AIPage() {
               </h1>
               <p className="text-gray-500">Monitor and analyze AI assistant conversations</p>
             </div>
+            <Button onClick={fetchData} variant="outline">
+              Refresh Data
+            </Button>
           </div>
         </div>
       </div>
@@ -267,8 +288,12 @@ export default function AIPage() {
             ) : filteredChats.length === 0 ? (
               <div className="text-center py-8">
                 <MessageSquare className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                <p className="text-gray-500">No chats found</p>
-                <p className="text-sm text-gray-400">Try adjusting your search or filters</p>
+                <p className="text-gray-500">
+                  {chats.length === 0 ? "No AI chats found in database" : "No chats match your filters"}
+                </p>
+                <p className="text-sm text-gray-400">
+                  {chats.length === 0 ? "Users haven't started any AI conversations yet" : "Try adjusting your search or filters"}
+                </p>
               </div>
             ) : (
               <div className="space-y-4">
@@ -298,7 +323,7 @@ export default function AIPage() {
                               </Link>
                               <div className="flex items-center space-x-2 text-sm text-gray-500">
                                 <Badge variant="outline" className="text-xs">
-                                  {chat.messages.length} messages
+                                  {(chat.messages || []).length} messages
                                 </Badge>
                                 <span>{formatDate(chat.createdAt)}</span>
                               </div>
@@ -306,7 +331,7 @@ export default function AIPage() {
                           </div>
 
                           {/* Show first user message as preview */}
-                          {chat.messages.length > 0 && (
+                          {chat.messages && chat.messages.length > 0 && (
                             <div className="space-y-2">
                               <div className="flex items-start space-x-3">
                                 <Avatar className="h-6 w-6">
@@ -314,7 +339,7 @@ export default function AIPage() {
                                     <User className="h-3 w-3" />
                                   </AvatarFallback>
                                 </Avatar>
-                                <p className="text-sm text-gray-700 line-clamp-2">{chat.messages[0].content}</p>
+                                <p className="text-sm text-gray-700 line-clamp-2">{chat.messages[0].content || "No content"}</p>
                               </div>
 
                               {/* Show AI response preview if available */}
@@ -325,7 +350,7 @@ export default function AIPage() {
                                       <Bot className="h-3 w-3 text-blue-600" />
                                     </AvatarFallback>
                                   </Avatar>
-                                  <p className="text-sm text-gray-600 line-clamp-2">{chat.messages[1].content}</p>
+                                  <p className="text-sm text-gray-600 line-clamp-2">{chat.messages[1].content || "No content"}</p>
                                 </div>
                               )}
                             </div>

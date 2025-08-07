@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Stethoscope, Plus, Eye, Edit, Trash2, Calendar, Clock, Video, MapPin } from "lucide-react"
+import { Stethoscope, Plus, Eye, Edit, Trash2, Calendar, Clock, Video, MapPin } from 'lucide-react'
 
 const CONSULTATION_TYPES = ["virtual", "in-person", "phone"]
 const CONSULTATION_STATUSES = ["scheduled", "completed", "cancelled", "rescheduled"]
@@ -58,8 +58,7 @@ export default function UserConsultations({ userId }) {
         },
         body: JSON.stringify({
           ...newConsultation,
-          userId: Number.parseInt(userId),
-          doctorId: 1, // Mock doctor ID
+          userId: userId,
         }),
       })
 
@@ -176,41 +175,6 @@ export default function UserConsultations({ userId }) {
             <p className="text-sm text-gray-600 p-3 bg-gray-50 rounded-lg">{consultation.notes}</p>
           </div>
         )}
-
-        {/* Prescription */}
-        {consultation.prescription && (
-          <div>
-            <Label className="text-sm font-medium text-gray-900 mb-2 block">Prescription</Label>
-            <p className="text-sm text-gray-600 p-3 bg-blue-50 rounded-lg border border-blue-200">
-              {consultation.prescription}
-            </p>
-          </div>
-        )}
-
-        {/* Follow-up */}
-        {consultation.followUp && (
-          <div>
-            <Label className="text-sm font-medium text-gray-900 mb-2 block">Follow-up Scheduled</Label>
-            <div className="flex items-center space-x-2">
-              <Calendar className="h-4 w-4 text-green-600" />
-              <span className="text-sm font-medium text-green-600">{formatDate(consultation.followUp)}</span>
-            </div>
-          </div>
-        )}
-
-        {/* Timestamps */}
-        <div className="pt-4 border-t border-gray-200">
-          <div className="grid grid-cols-2 gap-4 text-sm text-gray-500">
-            <div>
-              <span>Created: {formatDate(consultation.createdAt)}</span>
-            </div>
-            {consultation.updatedAt && (
-              <div>
-                <span>Updated: {formatDate(consultation.updatedAt)}</span>
-              </div>
-            )}
-          </div>
-        </div>
       </div>
     </DialogContent>
   )
@@ -359,7 +323,7 @@ export default function UserConsultations({ userId }) {
               </TableHeader>
               <TableBody>
                 {consultations.map((consultation) => (
-                  <TableRow key={consultation.id}>
+                  <TableRow key={consultation.id || consultation._id || Math.random().toString(36).substr(2, 9)}>
                     <TableCell className="font-medium">{consultation.doctorName}</TableCell>
                     <TableCell>
                       <div className="flex items-center space-x-2">

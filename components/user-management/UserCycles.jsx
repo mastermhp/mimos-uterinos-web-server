@@ -10,7 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Calendar, Plus, Eye, Edit, Trash2, Thermometer } from "lucide-react"
+import { Calendar, Plus, Eye, Edit, Trash2, Thermometer } from 'lucide-react'
 
 const FLOW_OPTIONS = ["none", "spotting", "light", "medium", "heavy"]
 const MOOD_OPTIONS = ["happy", "normal", "sad", "irritable", "anxious", "energetic"]
@@ -61,7 +61,7 @@ export default function UserCycles({ userId }) {
         },
         body: JSON.stringify({
           ...newCycle,
-          userId: Number.parseInt(userId),
+          userId: userId,
           temperature: newCycle.temperature ? Number.parseFloat(newCycle.temperature) : null,
         }),
       })
@@ -355,7 +355,7 @@ export default function UserCycles({ userId }) {
               </TableHeader>
               <TableBody>
                 {cycles.map((cycle) => (
-                  <TableRow key={cycle.id}>
+                  <TableRow key={cycle.id || cycle._id || Math.random().toString(36).substr(2, 9)}>
                     <TableCell className="font-medium">{formatDate(cycle.startDate)}</TableCell>
                     <TableCell>{cycle.endDate ? formatDate(cycle.endDate) : "Ongoing"}</TableCell>
                     <TableCell>{cycle.cycleLength} days</TableCell>

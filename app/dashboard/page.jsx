@@ -5,18 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import {
-  Users,
-  Heart,
-  MessageCircle,
-  Calendar,
-  TrendingUp,
-  Activity,
-  UserPlus,
-  CheckCircle,
-  FileText,
-  Stethoscope,
-} from "lucide-react"
+import { Users, Heart, MessageCircle, Calendar, TrendingUp, Activity, UserPlus, CheckCircle, FileText, Stethoscope } from 'lucide-react'
 import Link from "next/link"
 
 export default function Dashboard() {
@@ -43,36 +32,66 @@ export default function Dashboard() {
 
   const fetchDashboardData = async () => {
     try {
+      // Get auth token from localStorage
+      const token = localStorage.getItem('adminToken')
+      
       // Fetch all data in parallel with error handling
       const fetchWithFallback = async (url) => {
         try {
-          const response = await fetch(url)
-          if (!response.ok) throw new Error(`HTTP ${response.status}`)
-          return await response.json()
+          const headers = {
+            'Content-Type': 'application/json'
+          }
+          
+          // Add auth header if token exists
+          if (token) {
+            headers['Authorization'] = `Bearer ${token}`
+          }
+          
+          const response = await fetch(url, { headers })
+          if (!response.ok) {
+            console.error(`HTTP error! status: ${response.status}, URL: ${url}`);
+            throw new Error(`HTTP ${response.status}`);
+          }
+          return await response.json();
         } catch (error) {
-          console.error(`Error fetching ${url}:`, error)
-          return { success: false, data: [] }
+          console.error(`Error fetching ${url}:`, error);
+          return { success: false, data: [] };
         }
-      }
+      };
 
+      const limit = 100; // Define the limit here
+      
+      // Use admin endpoints that don't require userId
       const [usersData, cyclesData, symptomsData, chatsData, reportsData, consultationsData] = await Promise.all([
-        fetchWithFallback("/api/users?limit=100"),
-        fetchWithFallback("/api/cycles?limit=100"),
-        fetchWithFallback("/api/symptoms?limit=100"),
-        fetchWithFallback("/api/ai/chat?limit=100"),
-        fetchWithFallback("/api/reports?limit=100"),
-        fetchWithFallback("/api/doctor/consultations?limit=100"),
-      ])
+        fetchWithFallback(`/api/admin/users?limit=${limit}`),
+        fetchWithFallback(`/api/admin/cycles?limit=${limit}`),
+        fetchWithFallback(`/api/admin/symptoms?limit=${limit}`),
+        fetchWithFallback(`/api/admin/chats?limit=${limit}`),
+        fetchWithFallback(`/api/admin/reports?limit=${limit}`),
+        fetchWithFallback(`/api/admin/consultations?limit=${limit}`),
+      ]);
+
+      console.log('📊 Dashboard data fetched:', {
+        users: usersData.success ? usersData.data?.length || usersData.users?.length : 'failed',
+        cycles: cyclesData.success ? cyclesData.data?.length : 'failed',
+        symptoms: symptomsData.success ? symptomsData.data?.length : 'failed',
+        chats: chatsData.success ? chatsData.data?.length : 'failed',
+        reports: reportsData.success ? reportsData.data?.length : 'failed',
+        consultations: consultationsData.success ? consultationsData.data?.length : 'failed',
+      });
 
       // Update stats with safe data access
-      if (usersData.success && Array.isArray(usersData.data)) {
-        const users = usersData.data
-        setStats((prev) => ({
-          ...prev,
-          totalUsers: users.length,
-          activeUsers: users.filter((u) => u?.status === "active").length,
-          premiumUsers: users.filter((u) => u?.premium).length,
-        }))
+      if (usersData.success) {
+        // Handle both possible response formats
+        const users = usersData.data || usersData.users || []
+        if (Array.isArray(users)) {
+          setStats((prev) => ({
+            ...prev,
+            totalUsers: users.length,
+            activeUsers: users.filter((u) => u?.status === "active").length,
+            premiumUsers: users.filter((u) => u?.premium).length,
+          }))
+        }
       }
 
       if (cyclesData.success && Array.isArray(cyclesData.data)) {
@@ -97,7 +116,7 @@ export default function Dashboard() {
 
       // Generate real-time activity feed with safe data
       generateRecentActivity(
-        usersData.data || [],
+        usersData.data || usersData.users || [],
         cyclesData.data || [],
         symptomsData.data || [],
         chatsData.data || [],

@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Activity, Plus, Eye, Edit, Trash2, Thermometer } from "lucide-react"
+import { Activity, Plus, Eye, Edit, Trash2, Thermometer } from 'lucide-react'
 
 const SYMPTOM_OPTIONS = [
   { id: "cramps", label: "Cramps" },
@@ -73,7 +73,7 @@ export default function UserSymptoms({ userId }) {
         },
         body: JSON.stringify({
           ...newSymptom,
-          userId: Number.parseInt(userId),
+          userId: userId,
           temperature: newSymptom.temperature ? Number.parseFloat(newSymptom.temperature) : null,
         }),
       })
@@ -386,7 +386,7 @@ export default function UserSymptoms({ userId }) {
               </TableHeader>
               <TableBody>
                 {symptoms.map((symptom) => (
-                  <TableRow key={symptom.id}>
+                  <TableRow key={symptom.id || symptom._id || Math.random().toString(36).substr(2, 9)}>
                     <TableCell className="font-medium">{formatDate(symptom.date)}</TableCell>
                     <TableCell>
                       <Badge className={getFlowColor(symptom.flow)}>

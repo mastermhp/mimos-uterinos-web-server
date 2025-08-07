@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Users, Search, Filter, Eye, Edit, Trash2, Crown, Calendar, Mail, Phone } from "lucide-react"
+import { Users, Search, Filter, Eye, Edit, Trash2, Crown, Calendar, Mail, Phone } from 'lucide-react'
 import Link from "next/link"
 
 export default function UsersPage() {
@@ -18,6 +18,7 @@ export default function UsersPage() {
   const [selectedUser, setSelectedUser] = useState(null)
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
+  const [deleteLoading, setDeleteLoading] = useState(null)
 
   useEffect(() => {
     fetchUsers()
@@ -26,7 +27,7 @@ export default function UsersPage() {
   const fetchUsers = async () => {
     try {
       setLoading(true)
-      const response = await fetch(`/api/users?page=${currentPage}&limit=10&search=${searchTerm}`)
+      const response = await fetch(`/api/admin/users?page=${currentPage}&limit=10&search=${searchTerm}`)
       const data = await response.json()
 
       if (data.success) {
@@ -44,6 +45,34 @@ export default function UsersPage() {
   const handleSearch = (e) => {
     setSearchTerm(e.target.value)
     setCurrentPage(1)
+  }
+
+  const handleDeleteUser = async (userId) => {
+    if (!confirm("Are you sure you want to delete this user? This action cannot be undone.")) {
+      return
+    }
+
+    try {
+      setDeleteLoading(userId)
+      const response = await fetch(`/api/users/${userId}`, {
+        method: 'DELETE',
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        // Remove user from local state
+        setUsers(users.filter(user => user.id !== userId && user._id !== userId))
+        alert("User deleted successfully")
+      } else {
+        alert(data.message || "Failed to delete user")
+      }
+    } catch (error) {
+      console.error("Error deleting user:", error)
+      alert("Failed to delete user")
+    } finally {
+      setDeleteLoading(null)
+    }
   }
 
   const formatDate = (dateString) => {
@@ -78,6 +107,10 @@ export default function UsersPage() {
     return safeStatus.charAt(0).toUpperCase() + safeStatus.slice(1)
   }
 
+  const isPremiumUser = (user) => {
+    return user.accountType === "premium" || user.premium === true
+  }
+
   const UserDetailsDialog = ({ user }) => {
     if (!user) return null
 
@@ -110,9 +143,9 @@ export default function UsersPage() {
               <Badge className={getStatusColor(user.status)}>{getStatusDisplay(user.status)}</Badge>
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-gray-500">Premium</label>
+              <label className="text-sm font-medium text-gray-500">Account Type</label>
               <div className="flex items-center space-x-2">
-                {user.premium ? (
+                {isPremiumUser(user) ? (
                   <Badge className="bg-yellow-100 text-yellow-800">
                     <Crown className="h-3 w-3 mr-1" />
                     Premium
@@ -271,7 +304,7 @@ export default function UsersPage() {
                     <TableRow>
                       <TableHead>User</TableHead>
                       <TableHead>Status</TableHead>
-                      <TableHead>Premium</TableHead>
+                      <TableHead>Account Type</TableHead>
                       <TableHead>Join Date</TableHead>
                       <TableHead>Last Active</TableHead>
                       <TableHead>Actions</TableHead>
@@ -304,7 +337,7 @@ export default function UsersPage() {
                           <Badge className={getStatusColor(user.status)}>{getStatusDisplay(user.status)}</Badge>
                         </TableCell>
                         <TableCell>
-                          {user.premium ? (
+                          {isPremiumUser(user) ? (
                             <Badge className="bg-yellow-100 text-yellow-800">
                               <Crown className="h-3 w-3 mr-1" />
                               Premium
@@ -334,8 +367,18 @@ export default function UsersPage() {
                                 <Edit className="h-4 w-4" />
                               </Button>
                             </Link>
-                            <Button variant="ghost" size="sm" className="text-red-600 hover:text-red-700">
-                              <Trash2 className="h-4 w-4" />
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              className="text-red-600 hover:text-red-700"
+                              onClick={() => handleDeleteUser(user._id || user.id)}
+                              disabled={deleteLoading === (user._id || user.id)}
+                            >
+                              {deleteLoading === (user._id || user.id) ? (
+                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-red-600"></div>
+                              ) : (
+                                <Trash2 className="h-4 w-4" />
+                              )}
                             </Button>
                           </div>
                         </TableCell>

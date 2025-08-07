@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { FileText, Plus, Eye, Download, Trash2, Calendar, TrendingUp, BarChart3 } from "lucide-react"
+import { FileText, Plus, Eye, Download, Trash2, Calendar, TrendingUp, BarChart3 } from 'lucide-react'
 
 const REPORT_TYPES = [
   { value: "monthly", label: "Monthly Summary" },
@@ -59,7 +59,11 @@ export default function UserReports({ userId }) {
         },
         body: JSON.stringify({
           ...newReport,
-          userId: Number.parseInt(userId),
+          userId: userId,
+          dateRange: {
+            start: newReport.startDate,
+            end: newReport.endDate
+          }
         }),
       })
 
@@ -201,50 +205,6 @@ export default function UserReports({ userId }) {
           </div>
         )}
 
-        {/* Common Symptoms */}
-        {report.data?.commonSymptoms && report.data.commonSymptoms.length > 0 && (
-          <div>
-            <h4 className="font-medium text-gray-900 mb-3">Most Common Symptoms</h4>
-            <div className="flex flex-wrap gap-2">
-              {report.data.commonSymptoms.map((symptom, index) => (
-                <Badge key={index} variant="secondary">
-                  {symptom.replace("_", " ")}
-                </Badge>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Mood Trends */}
-        {report.data?.moodTrends && (
-          <div>
-            <h4 className="font-medium text-gray-900 mb-3">Mood Trends</h4>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {Object.entries(report.data.moodTrends).map(([mood, count]) => (
-                <div key={mood} className="text-center p-3 bg-gray-50 rounded-lg">
-                  <p className="text-sm text-gray-500 capitalize">{mood}</p>
-                  <p className="text-xl font-bold text-gray-900">{count} days</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Flow Patterns */}
-        {report.data?.flowPatterns && (
-          <div>
-            <h4 className="font-medium text-gray-900 mb-3">Flow Patterns</h4>
-            <div className="grid grid-cols-3 gap-4">
-              {Object.entries(report.data.flowPatterns).map(([flow, count]) => (
-                <div key={flow} className="text-center p-3 bg-gray-50 rounded-lg">
-                  <p className="text-sm text-gray-500 capitalize">{flow}</p>
-                  <p className="text-xl font-bold text-gray-900">{count} days</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
         {/* Insights */}
         {report.insights && report.insights.length > 0 && (
           <div>
@@ -255,20 +215,6 @@ export default function UserReports({ userId }) {
                   <div className="w-2 h-2 bg-blue-500 rounded-full mt-2 flex-shrink-0"></div>
                   <p className="text-sm text-blue-800">{insight}</p>
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* Medications */}
-        {report.data?.medications && report.data.medications.length > 0 && (
-          <div>
-            <h4 className="font-medium text-gray-900 mb-3">Current Medications</h4>
-            <div className="flex flex-wrap gap-2">
-              {report.data.medications.map((medication, index) => (
-                <Badge key={index} variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                  {medication.replace("_", " ")}
-                </Badge>
               ))}
             </div>
           </div>
@@ -377,7 +323,7 @@ export default function UserReports({ userId }) {
           ) : (
             <div className="space-y-4">
               {reports.map((report) => (
-                <Card key={report.id} className="hover:shadow-md transition-shadow">
+                <Card key={report.id || report._id || Math.random().toString(36).substr(2, 9)} className="hover:shadow-md transition-shadow">
                   <CardContent className="p-6">
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
@@ -405,12 +351,6 @@ export default function UserReports({ userId }) {
                               <div className="flex items-center space-x-1">
                                 <Calendar className="h-4 w-4 text-blue-500" />
                                 <span>{report.data.cyclesTracked} cycles</span>
-                              </div>
-                            )}
-                            {report.data.commonSymptoms && (
-                              <div className="flex items-center space-x-1">
-                                <TrendingUp className="h-4 w-4 text-green-500" />
-                                <span>{report.data.commonSymptoms.length} symptoms tracked</span>
                               </div>
                             )}
                             {report.insights && (
