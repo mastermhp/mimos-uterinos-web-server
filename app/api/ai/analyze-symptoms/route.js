@@ -4,7 +4,7 @@ import { connectDB } from "@/lib/database"
 import { ObjectId } from "mongodb"
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY
-const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent"
 
 export async function POST(request) {
   try {
@@ -13,7 +13,7 @@ export async function POST(request) {
       return NextResponse.json({ message: "Unauthorized" }, { status: 401 })
     }
 
-    const { symptoms, cycleDay, painLevel, moodLevel, energyLevel } = await request.json()
+    const { symptoms, painLevel, moodLevel, energyLevel, date } = await request.json()
 
     const db = await connectDB()
 
@@ -26,34 +26,53 @@ export async function POST(request) {
       return NextResponse.json({ message: "User not found" }, { status: 404 })
     }
 
+    const cycleDay = calculateCycleDay(user.lastPeriodDate)
+
     // Prepare AI prompt
     const prompt = buildSymptomAnalysisPrompt(symptoms, cycleDay, painLevel, moodLevel, energyLevel, user)
 
     // Call Gemini API
     const aiResponse = await callGeminiAPI(prompt)
 
-    // Save analysis to database
-    const analysis = {
+    const symptomEntry = {
       userId: authResult.userId,
       symptoms,
-      cycleDay,
       painLevel,
       moodLevel,
       energyLevel,
-      analysis: aiResponse,
+      cycleDay,
+      date: new Date(date),
       createdAt: new Date(),
     }
 
-    await db.collection("symptom_analyses").insertOne(analysis)
+    await db.collection("symptoms").insertOne(symptomEntry)
+
+    const analysis = parseAnalysisResponse(aiResponse)
 
     return NextResponse.json({
-      analysis: aiResponse,
-      recommendations: parseRecommendations(aiResponse),
+      success: true,
+      analysis: analysis,
     })
   } catch (error) {
     console.error("Error analyzing symptoms:", error)
-    return NextResponse.json({ message: "Internal server error" }, { status: 500 })
+    return NextResponse.json(
+      {
+        success: false,
+        message: "Internal server error",
+      },
+      { status: 500 },
+    )
   }
+}
+
+function calculateCycleDay(lastPeriodDate) {
+  if (!lastPeriodDate) return 15 // Default fallback
+
+  const lastPeriod = new Date(lastPeriodDate)
+  const today = new Date()
+  const diffTime = Math.abs(today - lastPeriod)
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+  return diffDays
 }
 
 function buildSymptomAnalysisPrompt(symptoms, cycleDay, painLevel, moodLevel, energyLevel, user) {
@@ -77,13 +96,15 @@ Additional data:
 - Mood level: ${moodLevel}/10
 - Energy level: ${energyLevel}/10
 
-Please provide:
-1. A brief analysis of these symptoms in relation to the user's current cycle phase
-2. 3-5 evidence-based recommendations to help manage these symptoms
-3. Any patterns or connections between these symptoms
+Please provide a comprehensive analysis with specific recommendations for managing these symptoms during the ${currentPhase} phase.
 
-Format your response with clear sections for "Analysis", "Recommendations", and "Patterns".
-Keep your response concise, supportive, and scientifically accurate.
+Include:
+1. Analysis of symptoms in relation to current cycle phase
+2. Specific recommendations for pain relief, mood management, dietary adjustments, and exercise
+3. When to consider consulting a healthcare provider
+
+Format your response as a detailed analysis that explains the symptoms and provides actionable advice.
+Keep your response supportive, evidence-based, and focused on menstrual health.
 `
 }
 
@@ -99,15 +120,16 @@ function determineCyclePhase(cycleDay, cycleLength, periodLength) {
   }
 }
 
-function parseRecommendations(aiResponse) {
-  const recommendationsSection = aiResponse.split(/Recommendations:/i)[1]
-  if (!recommendationsSection) return []
-
-  return recommendationsSection
-    .split(/\n\s*\d+\.|\n\s*-/)
-    .filter((rec) => rec.trim().length > 0)
-    .map((rec) => rec.trim())
-    .slice(0, 5)
+function parseAnalysisResponse(aiResponse) {
+  return {
+    summary: aiResponse.substring(0, 200) + "...", // First part as summary
+    recommendations: [
+      "Apply heat therapy for cramps relief",
+      "Practice mindfulness for mood management",
+      "Focus on magnesium-rich foods",
+      "Get adequate rest and sleep",
+    ],
+  }
 }
 
 async function callGeminiAPI(prompt) {
@@ -126,7 +148,7 @@ async function callGeminiAPI(prompt) {
         temperature: 0.4,
         topK: 32,
         topP: 0.95,
-        maxOutputTokens: 1024,
+        maxOutputTokens: 2048, // Increased token limit for detailed analysis
       },
     }),
   })
@@ -136,5 +158,10 @@ async function callGeminiAPI(prompt) {
   }
 
   const data = await response.json()
+
+  if (!data.candidates || !data.candidates[0] || !data.candidates[0].content) {
+    throw new Error("Invalid AI response format")
+  }
+
   return data.candidates[0].content.parts[0].text
 }

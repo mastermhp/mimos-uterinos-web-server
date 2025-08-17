@@ -176,6 +176,113 @@
     @apply bg-yellow-100 text-yellow-800 border-yellow-200;
   }
 
+  /* Custom slider styles for onboarding */
+  .slider {
+    -webkit-appearance: none;
+    appearance: none;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .slider::-webkit-slider-track {
+    background: #e5e7eb;
+    height: 8px;
+    border-radius: 4px;
+  }
+
+  .slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    background: #ec4899;
+    height: 20px;
+    width: 20px;
+    border-radius: 50%;
+    cursor: pointer;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+
+  .slider::-moz-range-track {
+    background: #e5e7eb;
+    height: 8px;
+    border-radius: 4px;
+    border: none;
+  }
+
+  .slider::-moz-range-thumb {
+    background: #ec4899;
+    height: 20px;
+    width: 20px;
+    border-radius: 50%;
+    cursor: pointer;
+    border: none;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+
+  /* Added specific slider styles for symptom logging */
+  .slider-pink::-webkit-slider-thumb {
+    background: #ec4899;
+  }
+
+  .slider-blue::-webkit-slider-thumb {
+    background: #3b82f6;
+  }
+
+  .slider-green::-webkit-slider-thumb {
+    background: #10b981;
+  }
+
+  .slider-pink::-moz-range-thumb {
+    background: #ec4899;
+  }
+
+  .slider-blue::-moz-range-thumb {
+    background: #3b82f6;
+  }
+
+  .slider-green::-moz-range-thumb {
+    background: #10b981;
+  }
+
+  /* Added symptom icon styles */
+  .symptom-icon {
+    transition: all 0.2s ease-in-out;
+  }
+
+  .symptom-icon:hover {
+    transform: scale(1.05);
+  }
+
+  .symptom-selected {
+    transform: scale(1.1);
+    box-shadow: 0 4px 12px rgba(236, 72, 153, 0.3);
+  }
+
+  /* Mobile-first responsive design */
+  .mobile-container {
+    max-width: 428px;
+    margin: 0 auto;
+    min-height: 100vh;
+    background: white;
+    position: relative;
+  }
+
+  /* Onboarding specific styles */
+  .onboarding-progress {
+    background: linear-gradient(90deg, #ec4899 0%, #be185d 100%);
+    transition: width 0.3s ease-in-out;
+  }
+
+  .onboarding-button {
+    background: linear-gradient(135deg, #ec4899 0%, #be185d 100%);
+    box-shadow: 0 4px 12px rgba(236, 72, 153, 0.3);
+    transition: all 0.2s ease-in-out;
+  }
+
+  .onboarding-button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(236, 72, 153, 0.4);
+  }
+
   /* Responsive utilities */
   @media (max-width: 640px) {
     .mobile-hidden {
