@@ -13,6 +13,8 @@ export default function AIChatScreen({ user, onBack }) {
   ])
   const [inputMessage, setInputMessage] = useState("")
   const [isLoading, setIsLoading] = useState(false)
+  const [chatHistory, setChatHistory] = useState([])
+  const [loadingHistory, setLoadingHistory] = useState(true)
   const messagesEndRef = useRef(null)
 
   const scrollToBottom = () => {
@@ -22,6 +24,37 @@ export default function AIChatScreen({ user, onBack }) {
   useEffect(() => {
     scrollToBottom()
   }, [messages])
+
+  useEffect(() => {
+    loadChatHistory()
+  }, [])
+
+  const loadChatHistory = async () => {
+    try {
+      setLoadingHistory(true)
+      const response = await fetch(`/api/ai/chat?userId=${user.id || user._id}`)
+      const data = await response.json()
+
+      if (data.success && data.data.length > 0) {
+        setChatHistory(data.data)
+        // Load the most recent chat messages
+        const latestChat = data.data[0]
+        if (latestChat.messages && latestChat.messages.length > 0) {
+          const formattedMessages = latestChat.messages.map((msg, index) => ({
+            id: msg.id || index + 1,
+            type: msg.role === "user" ? "user" : "ai",
+            content: msg.content,
+            timestamp: new Date(msg.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          }))
+          setMessages([...messages, ...formattedMessages])
+        }
+      }
+    } catch (error) {
+      console.error("Error loading chat history:", error)
+    } finally {
+      setLoadingHistory(false)
+    }
+  }
 
   const isHealthRelated = (message) => {
     const healthKeywords = [
@@ -125,6 +158,10 @@ export default function AIChatScreen({ user, onBack }) {
       }
 
       setMessages((prev) => [...prev, aiMessage])
+
+      setTimeout(() => {
+        loadChatHistory()
+      }, 1000)
     } catch (error) {
       console.error("Error sending message:", error)
       const errorMessage = {
@@ -152,13 +189,20 @@ export default function AIChatScreen({ user, onBack }) {
       {/* Header */}
       <div className="bg-white border-b border-gray-200 flex-shrink-0">
         <div className="max-w-md mx-auto px-6 py-4">
-          <div className="flex items-center">
-            <button onClick={onBack} className="mr-4">
-              <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-              </svg>
-            </button>
-            <h1 className="text-xl font-semibold text-gray-800">Mimos Uterinos AI Coach</h1>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <button onClick={onBack} className="mr-4">
+                <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                </svg>
+              </button>
+              <h1 className="text-xl font-semibold text-gray-800">Mimos Uterinos AI Coach</h1>
+            </div>
+            {chatHistory.length > 0 && (
+              <div className="text-xs text-gray-500">
+                {chatHistory.length} conversation{chatHistory.length > 1 ? "s" : ""}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -166,6 +210,13 @@ export default function AIChatScreen({ user, onBack }) {
       {/* Messages */}
       <div className="flex-1 overflow-y-auto">
         <div className="max-w-md mx-auto px-6 py-6 space-y-4">
+          {loadingHistory && (
+            <div className="text-center py-4">
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-purple-500 mx-auto"></div>
+              <p className="text-xs text-gray-500 mt-2">Loading chat history...</p>
+            </div>
+          )}
+
           {messages.map((message) => (
             <div key={message.id} className={`flex ${message.type === "user" ? "justify-end" : "justify-start"}`}>
               <div

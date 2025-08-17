@@ -11,6 +11,14 @@ export default function DoctorModeScreen({ user, onBack }) {
     notes: "",
   })
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [showBookingModal, setShowBookingModal] = useState(false)
+  const [bookingData, setBookingData] = useState({
+    doctorName: "",
+    type: "virtual",
+    scheduledDate: "",
+    reason: "",
+    notes: "",
+  })
 
   useEffect(() => {
     fetchConsultations()
@@ -51,7 +59,7 @@ export default function DoctorModeScreen({ user, onBack }) {
       if (data.success) {
         setConsultations((prev) => [data.data, ...prev])
         setNewConsultation({ symptoms: "", severity: 5, duration: "", notes: "" })
-        alert("Consultation request submitted successfully!")
+        alert("AI consultation request submitted successfully!")
       } else {
         alert("Failed to submit consultation request")
       }
@@ -60,6 +68,46 @@ export default function DoctorModeScreen({ user, onBack }) {
       alert("Error submitting consultation request")
     } finally {
       setIsSubmitting(false)
+    }
+  }
+
+  const bookRealDoctorConsultation = async () => {
+    if (!bookingData.doctorName.trim() || !bookingData.scheduledDate) {
+      alert("Please fill in doctor name and scheduled date")
+      return
+    }
+
+    try {
+      const response = await fetch("/api/doctor/consultations", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          userId: user.id || user._id,
+          ...bookingData,
+          duration: 30,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        setShowBookingModal(false)
+        setBookingData({
+          doctorName: "",
+          type: "virtual",
+          scheduledDate: "",
+          reason: "",
+          notes: "",
+        })
+        alert("Doctor consultation booked successfully!")
+      } else {
+        alert("Failed to book consultation")
+      }
+    } catch (error) {
+      console.error("Error booking consultation:", error)
+      alert("Error booking consultation")
     }
   }
 
@@ -80,9 +128,39 @@ export default function DoctorModeScreen({ user, onBack }) {
       </div>
 
       <div className="max-w-md mx-auto px-6 py-6">
-        {/* New Consultation Form */}
         <div className="bg-white rounded-xl p-6 mb-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-gray-800 mb-4">Request Consultation</h2>
+          <h2 className="text-lg font-semibold text-gray-800 mb-4">Choose Consultation Type</h2>
+
+          <div className="grid grid-cols-2 gap-4 mb-6">
+            <button className="bg-gradient-to-r from-purple-500 to-blue-600 text-white py-4 rounded-xl font-medium flex flex-col items-center space-y-2">
+              <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
+              </svg>
+              <span>AI Doctor</span>
+              <span className="text-xs opacity-80">Instant Response</span>
+            </button>
+
+            <button
+              onClick={() => setShowBookingModal(true)}
+              className="bg-gradient-to-r from-green-500 to-teal-600 text-white py-4 rounded-xl font-medium flex flex-col items-center space-y-2"
+            >
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"
+                />
+              </svg>
+              <span>Real Doctor</span>
+              <span className="text-xs opacity-80">Book Appointment</span>
+            </button>
+          </div>
+        </div>
+
+        {/* AI Consultation Form */}
+        <div className="bg-white rounded-xl p-6 mb-6 shadow-sm">
+          <h2 className="text-lg font-semibold text-gray-800 mb-4">AI Consultation Request</h2>
 
           <div className="space-y-4">
             <div>
@@ -136,7 +214,7 @@ export default function DoctorModeScreen({ user, onBack }) {
               disabled={isSubmitting || !newConsultation.symptoms.trim()}
               className="w-full bg-gradient-to-r from-blue-500 to-blue-600 text-white py-3 rounded-xl font-medium disabled:opacity-50"
             >
-              {isSubmitting ? "Submitting..." : "Submit Consultation Request"}
+              {isSubmitting ? "Submitting..." : "Submit AI Consultation Request"}
             </button>
           </div>
         </div>
@@ -177,6 +255,87 @@ export default function DoctorModeScreen({ user, onBack }) {
           )}
         </div>
       </div>
+
+      {showBookingModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 m-6 max-w-sm w-full max-h-[80vh] overflow-y-auto">
+            <h3 className="text-lg font-semibold text-gray-800 mb-4">Book Real Doctor Consultation</h3>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Doctor Name</label>
+                <input
+                  type="text"
+                  value={bookingData.doctorName}
+                  onChange={(e) => setBookingData({ ...bookingData, doctorName: e.target.value })}
+                  placeholder="Dr. Sarah Martinez"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Consultation Type</label>
+                <select
+                  value={bookingData.type}
+                  onChange={(e) => setBookingData({ ...bookingData, type: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                >
+                  <option value="virtual">Virtual</option>
+                  <option value="in-person">In-Person</option>
+                  <option value="phone">Phone</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Scheduled Date & Time</label>
+                <input
+                  type="datetime-local"
+                  value={bookingData.scheduledDate}
+                  onChange={(e) => setBookingData({ ...bookingData, scheduledDate: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Reason for Consultation</label>
+                <textarea
+                  value={bookingData.reason}
+                  onChange={(e) => setBookingData({ ...bookingData, reason: e.target.value })}
+                  placeholder="Describe the reason for this consultation..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                  rows={3}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Additional Notes</label>
+                <textarea
+                  value={bookingData.notes}
+                  onChange={(e) => setBookingData({ ...bookingData, notes: e.target.value })}
+                  placeholder="Any additional notes..."
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
+                  rows={2}
+                />
+              </div>
+            </div>
+
+            <div className="flex space-x-3 mt-6">
+              <button
+                onClick={() => setShowBookingModal(false)}
+                className="flex-1 px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={bookRealDoctorConsultation}
+                className="flex-1 px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600"
+              >
+                Book Appointment
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
