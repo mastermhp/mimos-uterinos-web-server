@@ -6,9 +6,15 @@ import CycleCalendarScreen from "./CycleCalendarScreen"
 import AIChatScreen from "./AIChatScreen"
 import ReportsScreen from "./ReportsScreen"
 import DoctorModeScreen from "./DoctorModeScreen"
+import ProfileScreen from "./ProfileScreen"
+import SettingsScreen from "./SettingsScreen"
+import EditProfileScreen from "./EditProfileScreen"
+import PremiumScreen from "./PremiumScreen"
+import RemindersScreen from "./RemindersScreen"
 
 export default function Dashboard({ user, onLogout }) {
   const [currentScreen, setCurrentScreen] = useState("home")
+  const [userData, setUserData] = useState(user)
   const [cycleData, setCycleData] = useState(null)
   const [aiInsights, setAiInsights] = useState("")
   const [cyclePredictions, setCyclePredictions] = useState("")
@@ -19,15 +25,34 @@ export default function Dashboard({ user, onLogout }) {
   const renderScreen = () => {
     switch (currentScreen) {
       case "symptoms":
-        return <LogSymptomsScreen user={user} onBack={() => setCurrentScreen("home")} />
+        return <LogSymptomsScreen user={userData} onBack={() => setCurrentScreen("home")} />
       case "calendar":
-        return <CycleCalendarScreen user={user} onBack={() => setCurrentScreen("home")} />
+        return <CycleCalendarScreen user={userData} onBack={() => setCurrentScreen("home")} />
       case "chat":
-        return <AIChatScreen user={user} onBack={() => setCurrentScreen("home")} />
+        return <AIChatScreen user={userData} onBack={() => setCurrentScreen("home")} />
       case "reports":
-        return <ReportsScreen user={user} onBack={() => setCurrentScreen("home")} />
+        return <ReportsScreen user={userData} onBack={() => setCurrentScreen("home")} />
       case "doctor":
-        return <DoctorModeScreen user={user} onBack={() => setCurrentScreen("home")} />
+        return <DoctorModeScreen user={userData} onBack={() => setCurrentScreen("home")} />
+      case "profile":
+        return <ProfileScreen user={userData} onNavigate={setCurrentScreen} />
+      case "settings":
+        return <SettingsScreen onBack={() => setCurrentScreen("profile")} onNavigate={setCurrentScreen} />
+      case "edit-profile":
+        return (
+          <EditProfileScreen
+            user={userData}
+            onBack={() => setCurrentScreen("settings")}
+            onSave={(updatedData) => {
+              setUserData({ ...userData, ...updatedData })
+              fetchDashboardData() // Refresh all data including cycle predictions
+            }}
+          />
+        )
+      case "premium":
+        return <PremiumScreen onBack={() => setCurrentScreen("settings")} />
+      case "reminders":
+        return <RemindersScreen onBack={() => setCurrentScreen("settings")} />
       default:
         return renderHomeScreen()
     }
@@ -52,7 +77,7 @@ export default function Dashboard({ user, onLogout }) {
           <div className="max-w-md mx-auto px-6 py-8">
             <div className="flex justify-between items-start mb-6">
               <div>
-                <h1 className="text-2xl font-bold">Hello, {user.name}!</h1>
+                <h1 className="text-2xl font-bold">Hello, {userData.name}!</h1>
                 <p className="text-pink-100">
                   Day {calculateCycleDay()} of your cycle • {calculateDaysUntilNext()} days until next period
                 </p>
@@ -169,13 +194,12 @@ export default function Dashboard({ user, onLogout }) {
                 <span className="text-sm font-medium text-gray-700">AI Coach</span>
               </button>
 
-              {/* Added Doctor Mode button */}
               <button
-                onClick={() => setCurrentScreen("doctor")}
+                onClick={() => setCurrentScreen("profile")}
                 className="bg-white rounded-2xl p-4 shadow-sm hover:shadow-md transition-shadow"
               >
-                <div className="w-12 h-12 bg-yellow-100 rounded-xl flex items-center justify-center mx-auto mb-2">
-                  <svg className="w-6 h-6 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center mx-auto mb-2">
+                  <svg className="w-6 h-6 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path
                       strokeLinecap="round"
                       strokeLinejoin="round"
@@ -184,7 +208,7 @@ export default function Dashboard({ user, onLogout }) {
                     />
                   </svg>
                 </div>
-                <span className="text-sm font-medium text-gray-700">Doctor Mode</span>
+                <span className="text-sm font-medium text-gray-700">Profile</span>
               </button>
             </div>
           </div>
@@ -358,7 +382,7 @@ export default function Dashboard({ user, onLogout }) {
       const token = localStorage.getItem("token")
 
       // Fetch cycle data
-      const cycleResponse = await fetch(`/api/cycles?userId=${user.id || user._id}`, {
+      const cycleResponse = await fetch(`/api/cycles?userId=${userData.id || userData._id}`, {
         headers: { Authorization: `Bearer ${token}` },
       })
       const cycleData = await cycleResponse.json()
@@ -368,7 +392,7 @@ export default function Dashboard({ user, onLogout }) {
       }
 
       // Get AI insights and predictions
-      const insightsResponse = await fetch(`/api/ai/insights?userId=${user.id || user._id}`, {
+      const insightsResponse = await fetch(`/api/ai/insights?userId=${userData.id || userData._id}`, {
         headers: { Authorization: `Bearer ${token}` },
       })
       const insightsData = await insightsResponse.json()
@@ -449,7 +473,28 @@ export default function Dashboard({ user, onLogout }) {
   }
 
   const calculateCyclePredictions = () => {
-    if (!user.lastPeriodDate || !user.cycleLength) {
+    let lastPeriodDate, cycleLength, periodLength
+
+    // First try to get data from cycleData (from cycles collection)
+    if (cycleData?.startDate && cycleData?.cycleLength) {
+      lastPeriodDate = cycleData.startDate
+      cycleLength = cycleData.cycleLength
+      periodLength = cycleData.periodLength || 5
+    }
+    // Fallback to userData (from user profile)
+    else if (userData?.lastPeriodDate && userData?.cycleLength) {
+      lastPeriodDate = userData.lastPeriodDate
+      cycleLength = userData.cycleLength
+      periodLength = userData.periodLength || 5
+    }
+    // Check if user has profile data with cycle info
+    else if (userData?.profile?.lastPeriodDate && userData?.profile?.cycleLength) {
+      lastPeriodDate = userData.profile.lastPeriodDate
+      cycleLength = userData.profile.cycleLength
+      periodLength = userData.profile.periodLength || 5
+    }
+
+    if (!lastPeriodDate || !cycleLength) {
       return {
         nextPeriod: "Track your cycle for predictions",
         ovulation: "Log periods for ovulation tracking",
@@ -457,8 +502,7 @@ export default function Dashboard({ user, onLogout }) {
       }
     }
 
-    const lastPeriod = new Date(user.lastPeriodDate)
-    const cycleLength = user.cycleLength || 28
+    const lastPeriod = new Date(lastPeriodDate)
     const today = new Date()
 
     // Calculate next period
@@ -480,13 +524,23 @@ export default function Dashboard({ user, onLogout }) {
     const isInFertileWindow = today >= fertileStart && today <= fertileEnd
     const daysToFertileWindow = isInFertileWindow ? 0 : Math.ceil((fertileStart - today) / (1000 * 60 * 60 * 24))
 
+    const formatDate = (date) => {
+      return date.toLocaleDateString("en-US", { month: "short", day: "numeric" })
+    }
+
     return {
-      nextPeriod: daysToNextPeriod > 0 ? `${daysToNextPeriod} days` : "Period expected soon",
-      ovulation: daysToOvulation > 0 ? `${daysToOvulation} days` : daysToOvulation === 0 ? "Today" : "Ovulation passed",
+      nextPeriod:
+        daysToNextPeriod > 0 ? `Likely to start around ${formatDate(nextPeriodDate)}` : "Period expected soon",
+      ovulation:
+        daysToOvulation > 0
+          ? `Expected around ${formatDate(ovulationDate)}`
+          : daysToOvulation === 0
+            ? "Today"
+            : "Ovulation passed",
       fertileWindow: isInFertileWindow
-        ? "Active now"
+        ? `${formatDate(fertileStart)}-${formatDate(fertileEnd)} (Active now)`
         : daysToFertileWindow > 0
-          ? `${daysToFertileWindow} days`
+          ? `${formatDate(fertileStart)}-${formatDate(fertileEnd)} (${Math.abs(fertileEnd - fertileStart) / (1000 * 60 * 60 * 24)} days)`
           : "Window passed",
     }
   }
@@ -507,7 +561,7 @@ export default function Dashboard({ user, onLogout }) {
                   strokeLinecap="round"
                   strokeLinejoin="round"
                   strokeWidth={2}
-                  d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"
+                  d="M3 12l2-2m0 0l7-7 7 7M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
                 />
               </svg>
             </button>
@@ -551,8 +605,8 @@ export default function Dashboard({ user, onLogout }) {
               </svg>
             </button>
             <button
-              onClick={() => setCurrentScreen("doctor")}
-              className={`p-3 rounded-full ${currentScreen === "doctor" ? "bg-pink-500 text-white" : "bg-gray-100 text-gray-600"}`}
+              onClick={() => setCurrentScreen("profile")}
+              className={`p-3 rounded-full ${currentScreen === "profile" ? "bg-pink-500 text-white" : "bg-gray-100 text-gray-600"}`}
             >
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path

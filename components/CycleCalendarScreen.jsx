@@ -5,12 +5,33 @@ import { useState, useEffect } from "react"
 export default function CycleCalendarScreen({ user, onBack }) {
   const [currentDate, setCurrentDate] = useState(new Date())
   const [cycleData, setCycleData] = useState(null)
+  const [userData, setUserData] = useState(user)
   const [showSetPeriodModal, setShowSetPeriodModal] = useState(false)
-  const [newPeriodDate, setNewPeriodDate] = useState(new Date().toISOString().split("T")[0])
+  const [newPeriodDate, setNewPeriodDate] = useState(() => {
+    const lastPeriod = user.lastPeriodDate || user.profile?.lastPeriodDate
+    return lastPeriod ? new Date(lastPeriod).toISOString().split("T")[0] : new Date().toISOString().split("T")[0]
+  })
 
   useEffect(() => {
     fetchCycleData()
+    fetchUserData()
   }, [])
+
+  const fetchUserData = async () => {
+    try {
+      const response = await fetch(`/api/users/profile?userId=${user.id || user._id}`)
+      const data = await response.json()
+      if (data.success) {
+        setUserData(data.user)
+        const lastPeriod = data.user.lastPeriodDate || data.user.profile?.lastPeriodDate
+        if (lastPeriod) {
+          setNewPeriodDate(new Date(lastPeriod).toISOString().split("T")[0])
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching user data:", error)
+    }
+  }
 
   const fetchCycleData = async () => {
     try {
@@ -27,24 +48,48 @@ export default function CycleCalendarScreen({ user, onBack }) {
 
   const handleSetPeriodDate = async () => {
     try {
+      const token = localStorage.getItem("token")
+      const cycleLength = userData.cycleLength || userData.profile?.cycleLength || 28
+      const periodLength = userData.periodLength || userData.profile?.periodLength || 5
+
+      const profileUpdateResponse = await fetch("/api/users/profile", {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({
+          lastPeriodDate: newPeriodDate,
+          cycleLength: cycleLength,
+          periodLength: periodLength,
+        }),
+      })
+
       const response = await fetch("/api/cycles", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           userId: user.id || user._id,
           startDate: newPeriodDate,
-          cycleLength: user.cycleLength || 28,
-          periodLength: user.periodLength || 5,
+          cycleLength: cycleLength,
+          periodLength: periodLength,
         }),
       })
 
       const data = await response.json()
 
-      if (data.success) {
+      if (data.success && profileUpdateResponse.ok) {
         setCycleData(data.data)
         setShowSetPeriodModal(false)
+
+        const updatedUser = { ...user, lastPeriodDate: newPeriodDate }
+        localStorage.setItem("user", JSON.stringify(updatedUser))
+
+        await fetchUserData()
+        await fetchCycleData()
         alert("Period date set successfully!")
       } else {
         alert("Failed to set period date")
@@ -79,8 +124,30 @@ export default function CycleCalendarScreen({ user, onBack }) {
   }
 
   const calculateCyclePredictions = () => {
-    const lastPeriodDate = cycleData?.startDate || user.lastPeriodDate
-    const cycleLength = cycleData?.cycleLength || user.cycleLength
+    const lastPeriodDate =
+      cycleData?.startDate ||
+      userData.lastPeriodDate ||
+      userData.profile?.lastPeriodDate ||
+      user.lastPeriodDate ||
+      user.profile?.lastPeriodDate
+
+    const cycleLength =
+      cycleData?.cycleLength ||
+      userData.cycleLength ||
+      userData.profile?.cycleLength ||
+      user.cycleLength ||
+      user.profile?.cycleLength ||
+      28
+
+    const periodLength =
+      cycleData?.periodLength ||
+      userData.periodLength ||
+      userData.profile?.periodLength ||
+      user.periodLength ||
+      user.profile?.periodLength ||
+      5
+
+    console.log("[v0] Cycle prediction data:", { lastPeriodDate, cycleLength, periodLength })
 
     if (!lastPeriodDate || !cycleLength) {
       return {
@@ -124,8 +191,20 @@ export default function CycleCalendarScreen({ user, onBack }) {
 
     if (!predictions.nextPeriodDate) return null
 
-    const lastPeriodDate = cycleData?.startDate || user.lastPeriodDate
-    const periodLength = cycleData?.periodLength || user.periodLength || 5
+    const lastPeriodDate =
+      cycleData?.startDate ||
+      userData.lastPeriodDate ||
+      userData.profile?.lastPeriodDate ||
+      user.lastPeriodDate ||
+      user.profile?.lastPeriodDate
+
+    const periodLength =
+      cycleData?.periodLength ||
+      userData.periodLength ||
+      userData.profile?.periodLength ||
+      user.periodLength ||
+      user.profile?.periodLength ||
+      5
 
     if (lastPeriodDate) {
       const periodStart = new Date(lastPeriodDate)
@@ -137,12 +216,10 @@ export default function CycleCalendarScreen({ user, onBack }) {
       }
     }
 
-    // Check if it's in fertile window
     if (dayDate >= predictions.fertileStart && dayDate <= predictions.fertileEnd) {
       return "fertile"
     }
 
-    // Check if it's ovulation day
     if (dayDate.toDateString() === predictions.ovulationDate.toDateString()) {
       return "ovulation"
     }
@@ -156,12 +233,10 @@ export default function CycleCalendarScreen({ user, onBack }) {
     const today = new Date()
     const days = []
 
-    // Empty cells for days before the first day of the month
     for (let i = 0; i < firstDay; i++) {
       days.push(<div key={`empty-${i}`} className="h-10"></div>)
     }
 
-    // Days of the month
     for (let day = 1; day <= daysInMonth; day++) {
       const isToday =
         day === today.getDate() &&
@@ -204,7 +279,6 @@ export default function CycleCalendarScreen({ user, onBack }) {
 
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
-      {/* Header */}
       <div className="bg-white border-b border-gray-200">
         <div className="max-w-md mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
@@ -239,7 +313,6 @@ export default function CycleCalendarScreen({ user, onBack }) {
       </div>
 
       <div className="max-w-md mx-auto px-6 py-6 space-y-6">
-        {/* Calendar Navigation */}
         <div className="flex items-center justify-between">
           <button onClick={() => navigateMonth(-1)} className="p-2 hover:bg-gray-100 rounded-lg">
             <svg className="w-5 h-5 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -261,9 +334,7 @@ export default function CycleCalendarScreen({ user, onBack }) {
           </button>
         </div>
 
-        {/* Calendar */}
         <div className="bg-white rounded-xl p-4">
-          {/* Day headers */}
           <div className="grid grid-cols-7 gap-1 mb-4">
             {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
               <div key={day} className="text-center text-sm font-medium text-gray-500 py-2">
@@ -272,11 +343,9 @@ export default function CycleCalendarScreen({ user, onBack }) {
             ))}
           </div>
 
-          {/* Calendar days */}
           <div className="grid grid-cols-7 gap-1">{renderCalendar()}</div>
         </div>
 
-        {/* Legend */}
         <div className="flex justify-center space-x-6 text-sm">
           <div className="flex items-center space-x-2">
             <div className="w-4 h-4 bg-pink-200 rounded-full"></div>
@@ -292,7 +361,6 @@ export default function CycleCalendarScreen({ user, onBack }) {
           </div>
         </div>
 
-        {/* AI Predictions */}
         <div className="bg-gradient-to-r from-purple-500 to-blue-600 rounded-2xl p-6 text-white">
           <div className="flex items-center mb-4">
             <svg className="w-6 h-6 mr-2" fill="currentColor" viewBox="0 0 24 24">
@@ -340,7 +408,6 @@ export default function CycleCalendarScreen({ user, onBack }) {
           </div>
         </div>
 
-        {/* Cycle Information */}
         <div>
           <h3 className="text-lg font-semibold text-gray-800 mb-4">Cycle Information</h3>
           <div className="grid grid-cols-3 gap-4">
@@ -356,7 +423,15 @@ export default function CycleCalendarScreen({ user, onBack }) {
                 </svg>
               </div>
               <p className="text-sm text-gray-500">Cycle Length</p>
-              <p className="font-semibold text-gray-800">{cycleData?.cycleLength || user.cycleLength || 28} days</p>
+              <p className="font-semibold text-gray-800">
+                {cycleData?.cycleLength ||
+                  userData.cycleLength ||
+                  userData.profile?.cycleLength ||
+                  user.cycleLength ||
+                  user.profile?.cycleLength ||
+                  28}{" "}
+                days
+              </p>
             </div>
 
             <div className="bg-white rounded-xl p-4 text-center">
@@ -371,7 +446,15 @@ export default function CycleCalendarScreen({ user, onBack }) {
                 </svg>
               </div>
               <p className="text-sm text-gray-500">Period Length</p>
-              <p className="font-semibold text-gray-800">{cycleData?.periodLength || user.periodLength || 5} days</p>
+              <p className="font-semibold text-gray-800">
+                {cycleData?.periodLength ||
+                  userData.periodLength ||
+                  userData.profile?.periodLength ||
+                  user.periodLength ||
+                  user.profile?.periodLength ||
+                  5}{" "}
+                days
+              </p>
             </div>
 
             <div className="bg-white rounded-xl p-4 text-center">
@@ -391,7 +474,6 @@ export default function CycleCalendarScreen({ user, onBack }) {
           </div>
         </div>
 
-        {/* Action Buttons */}
         <div className="grid grid-cols-2 gap-4">
           <button
             onClick={() => onBack()}
@@ -426,7 +508,7 @@ export default function CycleCalendarScreen({ user, onBack }) {
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 strokeWidth={2}
-                d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"
+                d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v4a2 2 0 01-2 2h-2a2 2 0 00-2-2z"
               />
             </svg>
             <span>Doctor Mode</span>

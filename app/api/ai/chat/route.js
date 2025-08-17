@@ -86,13 +86,13 @@ export async function GET(request) {
 export async function POST(request) {
   try {
     const body = await request.json()
-    const { userId, message } = body
+    const { userId, message, chatId } = body
 
     if (!userId || !message) {
       return NextResponse.json({ success: false, error: "User ID and message are required" }, { status: 400 })
     }
 
-    console.log(`📝 Creating AI chat for userId: ${userId}`)
+    console.log(`📝 Processing AI chat for userId: ${userId}`)
 
     const { db } = await connectToDatabase()
 
@@ -107,52 +107,92 @@ export async function POST(request) {
         "I'm having trouble processing your request right now. Please try asking about your cycle, symptoms, or any menstrual health concerns."
     }
 
-    const newChat = {
-      userId: userId.toString(),
-      messages: [
+    let chatResult
+    if (chatId) {
+      // Update existing chat
+      const newMessage = {
+        id: Date.now(),
+        role: "user",
+        content: message,
+        timestamp: new Date().toISOString(),
+      }
+      const aiMessage = {
+        id: Date.now() + 1,
+        role: "assistant",
+        content: aiResponse,
+        timestamp: new Date().toISOString(),
+      }
+
+      await db.collection("ai_chats").updateOne(
+        { _id: new ObjectId(chatId) },
         {
-          id: 1,
-          role: "user",
-          content: message,
-          timestamp: new Date().toISOString(),
+          $push: {
+            messages: { $each: [newMessage, aiMessage] },
+          },
+          $set: { updatedAt: new Date().toISOString() },
         },
-        {
-          id: 2,
-          role: "assistant",
-          content: aiResponse,
-          timestamp: new Date().toISOString(),
-        },
-      ],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      )
+
+      const updatedChat = await db.collection("ai_chats").findOne({ _id: new ObjectId(chatId) })
+      chatResult = {
+        id: updatedChat._id.toString(),
+        userId: updatedChat.userId,
+        messages: updatedChat.messages,
+        createdAt: updatedChat.createdAt,
+        updatedAt: updatedChat.updatedAt,
+      }
+    } else {
+      // Create new chat
+      const newChat = {
+        userId: userId.toString(),
+        messages: [
+          {
+            id: 1,
+            role: "user",
+            content: message,
+            timestamp: new Date().toISOString(),
+          },
+          {
+            id: 2,
+            role: "assistant",
+            content: aiResponse,
+            timestamp: new Date().toISOString(),
+          },
+        ],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }
+
+      const result = await db.collection("ai_chats").insertOne(newChat)
+      chatResult = {
+        id: result.insertedId.toString(),
+        ...newChat,
+      }
     }
 
-    const result = await db.collection("ai_chats").insertOne(newChat)
-
-    const createdChat = {
-      id: result.insertedId.toString(),
-      ...newChat,
-    }
-
-    console.log("✅ AI chat created successfully:", createdChat.id)
+    console.log("✅ AI chat processed successfully:", chatResult.id)
 
     return NextResponse.json({
       success: true,
-      data: createdChat,
+      data: chatResult,
     })
   } catch (error) {
-    console.error("❌ Error creating AI chat:", error)
-    return NextResponse.json({ success: false, error: "Failed to create AI chat" }, { status: 500 })
+    console.error("❌ Error processing AI chat:", error)
+    return NextResponse.json({ success: false, error: "Failed to process AI chat" }, { status: 500 })
   }
 }
 
 async function callGeminiAPI(userMessage, userId, db) {
   try {
-    // Get user context for personalized responses
     let userContext = ""
     try {
       const user = await db.collection("users").findOne({
-        $or: [{ _id: ObjectId.isValid(userId) ? new ObjectId(userId) : null }, { _id: userId }, { id: userId }],
+        $or: [
+          { _id: ObjectId.isValid(userId) ? new ObjectId(userId) : null },
+          { _id: userId },
+          { id: userId },
+          { _id: Number.parseInt(userId) },
+        ],
       })
 
       if (user) {
@@ -175,6 +215,8 @@ Guidelines:
 - Focus on menstrual health, cycle tracking, symptoms, fertility, and related wellness topics
 - Keep responses under 200 words`
 
+    console.log("🤖 Calling Gemini API...")
+
     const response = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
       method: "POST",
       headers: {
@@ -192,20 +234,52 @@ Guidelines:
           topP: 0.95,
           maxOutputTokens: 1024,
         },
+        safetySettings: [
+          {
+            category: "HARM_CATEGORY_HARASSMENT",
+            threshold: "BLOCK_MEDIUM_AND_ABOVE",
+          },
+          {
+            category: "HARM_CATEGORY_HATE_SPEECH",
+            threshold: "BLOCK_MEDIUM_AND_ABOVE",
+          },
+        ],
       }),
     })
 
     if (!response.ok) {
-      throw new Error(`Gemini API error: ${response.status}`)
+      const errorText = await response.text()
+      console.error("Gemini API error response:", errorText)
+      throw new Error(`Gemini API error: ${response.status} - ${errorText}`)
     }
 
     const data = await response.json()
+    console.log("🤖 Gemini API response received")
+    console.log("🤖 Full response data:", JSON.stringify(data, null, 2))
 
-    if (!data.candidates || !data.candidates[0] || !data.candidates[0].content) {
-      throw new Error("Invalid Gemini API response format")
+    if (!data.candidates || !Array.isArray(data.candidates) || data.candidates.length === 0) {
+      console.error("No candidates in Gemini API response:", JSON.stringify(data, null, 2))
+      throw new Error("No candidates returned from Gemini API")
     }
 
-    return data.candidates[0].content.parts[0].text
+    const candidate = data.candidates[0]
+    if (!candidate.content) {
+      console.error("No content in candidate:", JSON.stringify(candidate, null, 2))
+      throw new Error("No content in Gemini API candidate")
+    }
+
+    if (!candidate.content.parts || !Array.isArray(candidate.content.parts) || candidate.content.parts.length === 0) {
+      console.error("No parts in content:", JSON.stringify(candidate.content, null, 2))
+      throw new Error("No parts in Gemini API content")
+    }
+
+    const text = candidate.content.parts[0].text
+    if (!text) {
+      console.error("No text in first part:", JSON.stringify(candidate.content.parts[0], null, 2))
+      throw new Error("No text in Gemini API response")
+    }
+
+    return text
   } catch (error) {
     console.error("Error calling Gemini API:", error)
     throw error

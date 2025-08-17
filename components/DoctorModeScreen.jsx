@@ -4,14 +4,17 @@ import { useState, useEffect } from "react"
 
 export default function DoctorModeScreen({ user, onBack }) {
   const [consultations, setConsultations] = useState([])
+  const [doctorAppointments, setDoctorAppointments] = useState([])
   const [newConsultation, setNewConsultation] = useState({
     symptoms: "",
     severity: 5,
     duration: "",
     notes: "",
   })
-  const [isSubmitting, setIsSubmitting] = useState(false)
   const [showBookingModal, setShowBookingModal] = useState(false)
+  const [showPrescriptionModal, setShowPrescriptionModal] = useState(false)
+  const [currentPrescription, setCurrentPrescription] = useState(null)
+  const [generatingPrescription, setGeneratingPrescription] = useState(false)
   const [bookingData, setBookingData] = useState({
     doctorName: "",
     type: "virtual",
@@ -22,6 +25,7 @@ export default function DoctorModeScreen({ user, onBack }) {
 
   useEffect(() => {
     fetchConsultations()
+    fetchDoctorAppointments()
   }, [])
 
   const fetchConsultations = async () => {
@@ -30,44 +34,63 @@ export default function DoctorModeScreen({ user, onBack }) {
       const data = await response.json()
 
       if (data.success) {
-        setConsultations(data.data || [])
+        const completedConsultations = (data.data || []).filter(
+          (consultation) => consultation.status === "completed" && consultation.aiResponse,
+        )
+        setConsultations(completedConsultations)
       }
     } catch (error) {
       console.error("Error fetching consultations:", error)
     }
   }
 
-  const submitConsultation = async () => {
+  const fetchDoctorAppointments = async () => {
+    try {
+      const response = await fetch(`/api/doctor/consultations?userId=${user.id || user._id}`)
+      const data = await response.json()
+
+      if (data.success) {
+        setDoctorAppointments(data.data || [])
+      }
+    } catch (error) {
+      console.error("Error fetching doctor appointments:", error)
+    }
+  }
+
+  const submitAIConsultation = async () => {
     if (!newConsultation.symptoms.trim()) return
 
-    setIsSubmitting(true)
+    setGeneratingPrescription(true)
     try {
-      const response = await fetch("/api/consultations", {
+      const response = await fetch("/api/ai/doctor-consultation", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
           userId: user.id || user._id,
-          ...newConsultation,
-          status: "pending",
+          symptoms: newConsultation.symptoms,
+          severity: newConsultation.severity,
+          duration: newConsultation.duration,
+          additionalNotes: newConsultation.notes,
         }),
       })
 
       const data = await response.json()
 
       if (data.success) {
-        setConsultations((prev) => [data.data, ...prev])
+        setCurrentPrescription(data.data)
+        setShowPrescriptionModal(true)
         setNewConsultation({ symptoms: "", severity: 5, duration: "", notes: "" })
-        alert("AI consultation request submitted successfully!")
+        fetchConsultations()
       } else {
-        alert("Failed to submit consultation request")
+        alert("Failed to generate AI consultation")
       }
     } catch (error) {
-      console.error("Error submitting consultation:", error)
-      alert("Error submitting consultation request")
+      console.error("Error generating AI consultation:", error)
+      alert("Error generating AI consultation")
     } finally {
-      setIsSubmitting(false)
+      setGeneratingPrescription(false)
     }
   }
 
@@ -101,6 +124,7 @@ export default function DoctorModeScreen({ user, onBack }) {
           reason: "",
           notes: "",
         })
+        fetchDoctorAppointments()
         alert("Doctor consultation booked successfully!")
       } else {
         alert("Failed to book consultation")
@@ -111,9 +135,52 @@ export default function DoctorModeScreen({ user, onBack }) {
     }
   }
 
+  const generatePDF = () => {
+    if (!currentPrescription) return
+
+    const printWindow = window.open("", "_blank")
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Medical Prescription - Mimos Uterinos AI</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 40px; line-height: 1.6; }
+            .header { text-align: center; border-bottom: 2px solid #333; padding-bottom: 20px; margin-bottom: 30px; }
+            .prescription { white-space: pre-line; }
+            .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #ccc; font-size: 12px; color: #666; }
+            h1 { color: #8B5CF6; margin: 0; }
+            h2 { color: #333; margin-top: 25px; }
+            .date { margin-top: 10px; font-size: 14px; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>Mimos Uterinos AI</h1>
+            <p>AI-Powered Menstrual Health Consultation</p>
+            <div class="date">Date: ${new Date(currentPrescription.createdAt).toLocaleDateString()}</div>
+          </div>
+          
+          <h2>Patient Information</h2>
+          <p><strong>Patient:</strong> ${user.name || "Patient"}</p>
+          <p><strong>Consultation ID:</strong> ${currentPrescription.id}</p>
+          
+          <h2>Medical Consultation Report</h2>
+          <div class="prescription">${currentPrescription.aiResponse}</div>
+          
+          <div class="footer">
+            <p><strong>Disclaimer:</strong> This is an AI-generated consultation for informational purposes only. Please consult with a qualified healthcare provider for proper medical diagnosis and treatment.</p>
+            <p>Generated by Mimos Uterinos AI - Menstrual Health Assistant</p>
+          </div>
+        </body>
+      </html>
+    `)
+    printWindow.document.close()
+    printWindow.print()
+  }
+
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
-      {/* Header */}
       <div className="bg-white border-b border-gray-200">
         <div className="max-w-md mx-auto px-6 py-4">
           <div className="flex items-center">
@@ -132,12 +199,18 @@ export default function DoctorModeScreen({ user, onBack }) {
           <h2 className="text-lg font-semibold text-gray-800 mb-4">Choose Consultation Type</h2>
 
           <div className="grid grid-cols-2 gap-4 mb-6">
-            <button className="bg-gradient-to-r from-purple-500 to-blue-600 text-white py-4 rounded-xl font-medium flex flex-col items-center space-y-2">
+            <button
+              onClick={submitAIConsultation}
+              disabled={!newConsultation.symptoms.trim() || generatingPrescription}
+              className="bg-gradient-to-r from-purple-500 to-blue-600 text-white py-4 rounded-xl font-medium flex flex-col items-center space-y-2 disabled:opacity-50"
+            >
               <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
               </svg>
               <span>AI Doctor</span>
-              <span className="text-xs opacity-80">Instant Response</span>
+              <span className="text-xs opacity-80">
+                {generatingPrescription ? "Generating..." : "Get Prescription"}
+              </span>
             </button>
 
             <button
@@ -158,9 +231,11 @@ export default function DoctorModeScreen({ user, onBack }) {
           </div>
         </div>
 
-        {/* AI Consultation Form */}
         <div className="bg-white rounded-xl p-6 mb-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-gray-800 mb-4">AI Consultation Request</h2>
+          <h2 className="text-lg font-semibold text-gray-800 mb-4">AI Prescription Request</h2>
+          <p className="text-sm text-gray-600 mb-4">
+            Fill out your symptoms below and click "AI Doctor" above to get an instant prescription.
+          </p>
 
           <div className="space-y-4">
             <div>
@@ -208,53 +283,125 @@ export default function DoctorModeScreen({ user, onBack }) {
                 rows={2}
               />
             </div>
-
-            <button
-              onClick={submitConsultation}
-              disabled={isSubmitting || !newConsultation.symptoms.trim()}
-              className="w-full bg-gradient-to-r from-blue-500 to-blue-600 text-white py-3 rounded-xl font-medium disabled:opacity-50"
-            >
-              {isSubmitting ? "Submitting..." : "Submit AI Consultation Request"}
-            </button>
           </div>
         </div>
 
-        {/* Previous Consultations */}
+        {doctorAppointments.length > 0 && (
+          <div className="bg-white rounded-xl p-6 mb-6 shadow-sm">
+            <h2 className="text-lg font-semibold text-gray-800 mb-4">Upcoming Doctor Appointments</h2>
+            <div className="space-y-4">
+              {doctorAppointments.map((appointment) => (
+                <div key={appointment.id} className="border border-gray-200 rounded-lg p-4">
+                  <div className="flex justify-between items-start mb-2">
+                    <div>
+                      <h3 className="font-medium text-gray-800">{appointment.doctorName}</h3>
+                      <p className="text-sm text-gray-600">{appointment.type} consultation</p>
+                    </div>
+                    <span
+                      className={`px-2 py-1 rounded-full text-xs font-medium ${
+                        appointment.status === "scheduled"
+                          ? "bg-blue-100 text-blue-800"
+                          : appointment.status === "completed"
+                            ? "bg-green-100 text-green-800"
+                            : "bg-yellow-100 text-yellow-800"
+                      }`}
+                    >
+                      {appointment.status}
+                    </span>
+                  </div>
+                  <div className="text-sm text-gray-600 mb-2">
+                    📅 {new Date(appointment.scheduledDate).toLocaleString()}
+                  </div>
+                  {appointment.reason && (
+                    <p className="text-sm text-gray-700 bg-gray-50 p-2 rounded">{appointment.reason}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div className="bg-white rounded-xl p-6 shadow-sm">
-          <h2 className="text-lg font-semibold text-gray-800 mb-4">Previous Consultations</h2>
+          <h2 className="text-lg font-semibold text-gray-800 mb-4">Previous AI Prescriptions</h2>
 
           {consultations.length === 0 ? (
-            <p className="text-gray-500 text-center py-4">No consultations yet</p>
+            <p className="text-gray-500 text-center py-4">No AI prescriptions yet</p>
           ) : (
             <div className="space-y-4">
               {consultations.map((consultation) => (
                 <div key={consultation.id} className="border border-gray-200 rounded-lg p-4">
                   <div className="flex justify-between items-start mb-2">
-                    <span
-                      className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        consultation.status === "pending"
-                          ? "bg-yellow-100 text-yellow-800"
-                          : consultation.status === "completed"
-                            ? "bg-green-100 text-green-800"
-                            : "bg-blue-100 text-blue-800"
-                      }`}
-                    >
-                      {consultation.status}
+                    <span className="px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                      Prescription Ready
                     </span>
                     <span className="text-xs text-gray-500">
                       {new Date(consultation.createdAt).toLocaleDateString()}
                     </span>
                   </div>
                   <p className="text-sm text-gray-700 mb-2">{consultation.symptoms}</p>
-                  <div className="text-xs text-gray-500">
+                  <div className="text-xs text-gray-500 mb-2">
                     Severity: {consultation.severity}/10 • Duration: {consultation.duration}
                   </div>
+                  <button
+                    onClick={() => {
+                      setCurrentPrescription(consultation)
+                      setShowPrescriptionModal(true)
+                    }}
+                    className="text-xs bg-purple-100 text-purple-700 px-3 py-1 rounded-full hover:bg-purple-200"
+                  >
+                    View Prescription
+                  </button>
                 </div>
               ))}
             </div>
           )}
         </div>
       </div>
+
+      {/* ... existing modals code ... */}
+      {showPrescriptionModal && currentPrescription && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl p-6 max-w-2xl w-full max-h-[80vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-gray-800">AI Medical Prescription</h3>
+              <div className="flex space-x-2">
+                <button
+                  onClick={generatePDF}
+                  className="bg-purple-500 text-white px-4 py-2 rounded-lg hover:bg-purple-600 text-sm"
+                >
+                  📄 Download PDF
+                </button>
+                <button onClick={() => setShowPrescriptionModal(false)} className="text-gray-500 hover:text-gray-700">
+                  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+            </div>
+
+            <div className="border border-gray-200 rounded-lg p-4 mb-4">
+              <div className="text-center border-b border-gray-200 pb-4 mb-4">
+                <h2 className="text-xl font-bold text-purple-600">Mimos Uterinos AI</h2>
+                <p className="text-sm text-gray-600">AI-Powered Menstrual Health Consultation</p>
+                <p className="text-xs text-gray-500 mt-2">
+                  Date: {new Date(currentPrescription.createdAt).toLocaleDateString()}
+                </p>
+              </div>
+
+              <div className="whitespace-pre-line text-sm text-gray-700 leading-relaxed">
+                {currentPrescription.aiResponse}
+              </div>
+
+              <div className="border-t border-gray-200 pt-4 mt-4 text-xs text-gray-500">
+                <p>
+                  <strong>Disclaimer:</strong> This is an AI-generated consultation for informational purposes only.
+                  Please consult with a qualified healthcare provider for proper medical diagnosis and treatment.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showBookingModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
